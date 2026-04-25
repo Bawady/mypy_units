@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mypy-units"
+version = "0.1.0"
+description = "Mypy plugin for static physical-unit dimensionality checking via Pint"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Dylan Baumann", email = "dbaumann@ecs.tuwien.ac.at" },
+]
+keywords = ["mypy", "plugin", "pint", "units", "dimensional-analysis", "type-checking"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pint>=0.23",
+    "mypy>=1.8",
+]
+
+[project.optional-dependencies]
+numpy  = ["numpy>=1.24"]
+pintrs = ["pintrs"]
+dev    = ["pytest>=8.0", "numpy>=1.24", "build>=1.0", "twine>=5.0"]
+
+[project.urls]
+Homepage   = "https://github.com/Bawady/mypy-units"
+Repository = "https://github.com/Bawady/mypy-units"
+Issues     = "https://github.com/Bawady/mypy-units/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mypy_units*"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+plugins = ["mypy_units.plugin"]
+
+[[tool.mypy.overrides]]
+module = ["mypy_units.*"]
+warn_unused_ignores = false
+disable_error_code = ["type-arg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
