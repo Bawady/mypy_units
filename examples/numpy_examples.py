@@ -5,16 +5,16 @@ import numpy as np
 
 from mypy_units import Quantity
 from mypy_units.units import (
-    kilometer,
-    meter_per_second,
-    second,
-    velocity,
-    length,
-    time,
-    mass,
-    force,
-    pressure,
     acceleration,
+    force,
+    kilometer,
+    length,
+    mass,
+    meter_per_second,
+    pressure,
+    second,
+    time,
+    velocity,
 )
 
 
@@ -26,8 +26,8 @@ def accel(v: velocity, t: time) -> acceleration:
     return v / t
 
 
-def accel2(l: length, t: time) -> acceleration:
-    return l / np.power(t, 2)
+def accel2(dist: length, t: time) -> acceleration:
+    return dist / np.power(t, 2)
 
 
 # scalar
@@ -46,13 +46,13 @@ area: Quantity[Literal["[length] ** 2"]] = Quantity(np.array([4.0, 9.0, 16.0]))
 side: length = np.sqrt(area)
 print(side.value)
 
-l: length = Quantity(10)
+dist: length = Quantity(10)
 m: mass = Quantity(2)
 t: time = Quantity(1)
 
-p: pressure = m / (l * t**2)
-p2: pressure = m / l * t**2
+p: pressure = m / (dist * t**2)
+p2: pressure = m / dist * t**2
 
-f: force = p * l**2
-f2: force = p * l
+f: force = p * dist**2
+f2: force = p * dist
 

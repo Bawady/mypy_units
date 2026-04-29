@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 PLUGIN_CONFIG = """\
 [mypy]
 python_version = 3.10

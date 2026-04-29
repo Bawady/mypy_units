@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
-
+from collections.abc import Callable
 from fractions import Fraction
 
 from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, OpExpr
@@ -39,7 +38,7 @@ _PLAIN_NUMERIC = {"builtins.float", "builtins.int", "builtins.complex"}
 # Type-level helpers
 # ---------------------------------------------------------------------------
 
-def _unit_str(tp: Type) -> Optional[str]:
+def _unit_str(tp: Type) -> str | None:
     """Extract the literal unit/dim string from ``Quantity[Literal["..."]]``."""
     proper = get_proper_type(tp)
     if not isinstance(proper, Instance):
@@ -73,7 +72,7 @@ def _check_call(
     callee_type: CallableType,
 ) -> Type:
     for i, (formal_type, param_name) in enumerate(
-        zip(callee_type.arg_types, callee_type.arg_names)
+        zip(callee_type.arg_types, callee_type.arg_names, strict=False)
     ):
         expected_str = _unit_str(formal_type)
         if expected_str is None:
@@ -114,7 +113,7 @@ def _check_call(
 
 def _callee_callable(
     ctx: FunctionContext | MethodContext, fullname: str
-) -> Optional[CallableType]:
+) -> CallableType | None:
     parts = fullname.rsplit(".", 1)
     if len(parts) != 2:
         return None
@@ -465,19 +464,19 @@ _NUMPY_UFUNC_HOOKS: dict[str, Callable[[MethodContext], Type]] = {
 class PintUnitsPlugin(Plugin):
     def get_function_signature_hook(
         self, fullname: str
-    ) -> Optional[Callable[[FunctionSigContext], CallableType]]:
+    ) -> Callable[[FunctionSigContext], CallableType] | None:
         return _make_sig_hook(fullname)
 
     def get_function_hook(
         self, fullname: str
-    ) -> Optional[Callable[[FunctionContext], Type]]:
+    ) -> Callable[[FunctionContext], Type] | None:
         if fullname in _NUMPY_FUNCTION_HOOKS:
             return _NUMPY_FUNCTION_HOOKS[fullname]
         return _make_function_hook(fullname)
 
     def get_method_hook(
         self, fullname: str
-    ) -> Optional[Callable[[MethodContext], Type]]:
+    ) -> Callable[[MethodContext], Type] | None:
         if fullname in _ARITH_HOOKS:
             return _ARITH_HOOKS[fullname]
         if fullname in _NUMPY_UFUNC_HOOKS:

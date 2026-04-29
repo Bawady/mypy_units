@@ -9,13 +9,24 @@ import numpy as np
 
 from mypy_units import Quantity
 from mypy_units.units import (
-    mass, length, time, velocity, acceleration,
-    force, energy, area, pressure,
-    kilogram, meter, second, newton, joule,
-    meter_per_second, meter_per_second_squared,
+    acceleration,
+    area,
+    energy,
+    force,
+    joule,
+    kilogram,
+    length,
+    mass,
+    meter,
+    meter_per_second,
+    meter_per_second_squared,
+    newton,
+    pressure,
+    second,
+    time,
+    velocity,
 )
-from mypy_units.units import power as mech_power   # avoid clash with np.power
-
+from mypy_units.units import power as mech_power  # avoid clash with np.power
 
 # ---------------------------------------------------------------------------
 # Elementary laws (one-liners — show that formula structure encodes the units)

@@ -11,10 +11,13 @@ from __future__ import annotations
 
 from mypy_units import Quantity
 from mypy_units.units import (
-    pressure, volume, temperature,
-    pascal, cubic_meter, kelvin,
+    cubic_meter,
+    kelvin,
+    pascal,
+    pressure,
+    temperature,
+    volume,
 )
-
 
 # ---------------------------------------------------------------------------
 # Classical gas laws (one-liners)

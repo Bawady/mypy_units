@@ -1,7 +1,7 @@
 """Tests for mypy_units plugin — invokes real mypy on inline fixtures."""
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 
 def no_error(output: str) -> None:

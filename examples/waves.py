@@ -7,10 +7,15 @@ from __future__ import annotations
 
 from mypy_units import Quantity
 from mypy_units.units import (
-    length, time, velocity, frequency,
-    meter, second, hertz, meter_per_second,
+    frequency,
+    hertz,
+    length,
+    meter,
+    meter_per_second,
+    second,
+    time,
+    velocity,
 )
-
 
 # ---------------------------------------------------------------------------
 # Elementary wave relations

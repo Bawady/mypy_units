@@ -116,12 +116,12 @@ class Quantity(Generic[_U_co]):
     # numpy operations on Quantity objects work correctly at runtime.
     # ------------------------------------------------------------------
 
-    def __array__(self, dtype: Any = None) -> "np.ndarray[Any, np.dtype[Any]]":
+    def __array__(self, dtype: Any = None) -> np.ndarray[Any, np.dtype[Any]]:
         try:
             import numpy as _np
             return _np.asarray(self._value, dtype=dtype)
         except ImportError:
-            raise TypeError("numpy is required for array conversion")
+            raise TypeError("numpy is required for array conversion") from None
 
     def __array_ufunc__(self, ufunc: Any, method: str, *inputs: Any, **kwargs: Any) -> Any:
         raw = [x._value if isinstance(x, Quantity) else x for x in inputs]

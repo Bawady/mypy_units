@@ -1,13 +1,14 @@
 from mypy_units import Quantity
 from mypy_units.units import (
+		acceleration,
 		kilometer,
+		length,
 		meter_per_second,
 		second,
-		velocity,
-		length,
 		time,
-		acceleration
+		velocity,
 )
+
 
 def speed(
 		distance: kilometer,
