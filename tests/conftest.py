@@ -39,7 +39,7 @@ def mypy_fixture(tmp_path: Path):
         import mypy.api
 
         src = tmp_path / "check.py"
-        src.write_text(PREAMBLE + textwrap.dedent(source))
+        src.write_text(PREAMBLE + textwrap.dedent(source), encoding="utf-8")
         stdout, stderr, _ = mypy.api.run(
             [str(src), f"--config-file={cfg}", "--no-error-summary"]
         )
