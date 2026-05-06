@@ -41,13 +41,20 @@ jobs:
           cache-dependency-glob: "pyproject.toml"
 
       - name: Install package and dev dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra test
 
       - name: Ruff Check
         run: uv run ruff check .
 
-      - name: Testcases
-        run: uv run pytest --tb=short -q --cov=mypy_units --cov-report=term-missing
-
       - name: Type Checking
         run: uv run mypy mypy_units --no-error-summary
+
+      - name: Testcases (pint backend)
+        run: uv run pytest --tb=short -q --cov=mypy_units --cov-report=term-missing
+
+      - name: Install pintrs
+        run: uv sync --extra test --extra pintrs
+
+      - name: Testcases (pintrs backend)
+        run: uv run pytest --tb=short -q --cov=mypy_units --cov-report=term-missing
+
