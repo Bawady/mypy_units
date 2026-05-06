@@ -10,6 +10,9 @@ PLUGIN_CONFIG = """\
 [mypy]
 python_version = 3.10
 plugins = mypy_units.plugin
+
+[mypy-pintrs]
+ignore_missing_imports = True
 """
 
 PREAMBLE = """\
