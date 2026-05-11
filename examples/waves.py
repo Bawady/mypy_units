@@ -7,69 +7,61 @@ from __future__ import annotations
 
 from mypy_units import Quantity
 from mypy_units.units import (
-    frequency,
     hertz,
-    length,
     meter,
     meter_per_second,
     second,
-    time,
-    velocity,
 )
 
 # ---------------------------------------------------------------------------
 # Elementary wave relations
 # ---------------------------------------------------------------------------
 
-def wavelength(c: velocity, f: frequency) -> length:
+def wavelength(c: meter_per_second, f: hertz) -> meter:
     """λ = c / f
 
-    [length/time] / [1/time] = [length/time]·[time] = [length] ✓
+    meter/second / (1/second) = meter ✓
     """
     return c / f
 
 
-def period(f: frequency) -> time:
+def period(f: hertz) -> second:
     """T = 1 / f
 
-    1 / [1/time] = [time] ✓  (tracked via __rtruediv__ hook)
+    1 / (1/second) = second ✓  (tracked via __rtruediv__ hook)
     """
     return 1 / f
 
 
-def wave_speed(lam: length, f: frequency) -> velocity:
+def wave_speed(lam: meter, f: hertz) -> meter_per_second:
     """c = λ · f
 
-    [length]·[1/time] = [length/time] ✓
+    meter · (1/second) = meter/second ✓
     """
     return lam * f
 
 
-def beat_frequency(f1: frequency, f2: frequency) -> frequency:
-    """|f1 - f2|; both arguments and the result are [1/time].
-
-    Negative difference is negated via __neg__ — the plugin returns the
-    same dimension, so the result is still [frequency].
-    """
-    diff: frequency = f1 - f2
+def beat_frequency(f1: hertz, f2: hertz) -> hertz:
+    """|f1 - f2|; both arguments and the result are hertz."""
+    diff: hertz = f1 - f2
     if diff < Quantity(0):
         return -diff
     return diff
 
 
 def doppler_observed(
-    f0: frequency,
-    c: velocity,
-    v_source: velocity,
-) -> frequency:
+    f0: hertz,
+    c: meter_per_second,
+    v_source: meter_per_second,
+) -> hertz:
     """Classic Doppler shift for a receding source: f' = f0 · c / (c + v_source).
 
     Dimension trace:
-      c + v_source   → velocity + velocity     = velocity      (same dim)
-      c / (c+v_s)    → velocity / velocity     = dimensionless ✓
-      f0 * ratio     → [1/time] · dimensionless = [1/time]     ✓
+      c + v_source   → meter/second + meter/second  = meter/second
+      c / (c+v_s)    → meter/second / meter/second  = dimensionless
+      f0 * ratio     → hertz · dimensionless         = hertz ✓
     """
-    relative: velocity = c + v_source
+    relative: meter_per_second = c + v_source
     ratio = c / relative
     return f0 * ratio
 
@@ -79,21 +71,17 @@ def doppler_observed(
 # ---------------------------------------------------------------------------
 
 def resonant_length(
-    c: velocity,
-    f: frequency,
+    c: meter_per_second,
+    f: hertz,
     n: int,
     closed_end: bool,
-) -> length:
+) -> meter:
     """Pipe length for the n-th harmonic.
 
     Open pipe (or open string):  L = n · λ / 2
     One-end-closed pipe:         L = (2n−1) · λ / 4
-
-    Multiplying [length] by a plain int preserves the [length] dimension
-    (the plugin treats plain int/float operands as dimensionless).
-    Likewise for integer division.
     """
-    lam: length = wavelength(c, f)
+    lam: meter = wavelength(c, f)
     if closed_end:
         return lam * (2 * n - 1) / 4
     return lam * n / 2
@@ -104,25 +92,25 @@ def resonant_length(
 # ---------------------------------------------------------------------------
 
 def harmonic_frequencies(
-    c: velocity,
-    L: length,
+    c: meter_per_second,
+    L: meter,
     n_max: int,
     closed_end: bool,
 ) -> list[float]:
     """Return the first n_max resonant frequencies (Hz values) for a pipe.
 
-    Open:   f_n = n · c / (2L)      n = 1, 2, 3, …
+    Open:   f_n = n · c / (2L)       n = 1, 2, 3, …
     Closed: f_n = (2n−1) · c / (4L)  n = 1, 2, 3, …
 
     Dimension trace for open case:
-      c / (2 · L) → [length/time] / [length] = [1/time] = frequency
-      n · (...)   → dimensionless · [1/time]  = [1/time] ✓
+      c / (2 · L) → meter/second / meter = 1/second = hertz
+      n · (...)   → dimensionless · hertz = hertz ✓
     """
-    base: frequency = c / L     # [length/time] / [length] = [1/time] ✓
+    base: hertz = c / L
     result: list[float] = []
     for n in range(1, n_max + 1):
         if closed_end:
-            f: frequency = base * (2 * n - 1) / 4
+            f: hertz = base * (2 * n - 1) / 4
         else:
             f = base * n / 2
         result.append(f.value)
@@ -134,9 +122,9 @@ def harmonic_frequencies(
 # ---------------------------------------------------------------------------
 
 def audio_band(
-    f: frequency,
-    f_low: frequency,
-    f_high: frequency,
+    f: hertz,
+    f_low: hertz,
+    f_high: hertz,
 ) -> str:
     """Return 'infrasound', 'audible', or 'ultrasound'."""
     if f < f_low:

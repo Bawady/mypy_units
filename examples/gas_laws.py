@@ -10,57 +10,49 @@ Type-check:  mypy examples/gas_laws.py
 from __future__ import annotations
 
 from mypy_units import Quantity
-from mypy_units.units import (
-    cubic_meter,
-    kelvin,
-    pascal,
-    pressure,
-    temperature,
-    volume,
-)
+from mypy_units.units import bar, cubic_meter, kelvin, pascal
 
 # ---------------------------------------------------------------------------
 # Classical gas laws (one-liners)
 # ---------------------------------------------------------------------------
 
-def boyles_law(P1: pressure, V1: volume, V2: volume) -> pressure:
+def boyles_law(P1: pascal, V1: cubic_meter, V2: cubic_meter) -> bar:
     """P2 = P1·V1 / V2  (constant temperature).
 
-    [mass/length/time²]·[length³] / [length³] = [mass/length/time²] ✓
+    pascal · cubic_meter / cubic_meter = pascal ✓
     """
     return P1 * V1 / V2
 
 
-def charles_law(V1: volume, T1: temperature, T2: temperature) -> volume:
+def charles_law(V1: cubic_meter, T1: kelvin, T2: kelvin) -> cubic_meter:
     """V2 = V1·T2 / T1  (constant pressure).
 
-    [length³]·[temperature] / [temperature] = [length³] ✓
+    cubic_meter · kelvin / kelvin = cubic_meter ✓
     """
     return V1 * T2 / T1
 
 
-def gay_lussac_law(P1: pressure, T1: temperature, T2: temperature) -> pressure:
+def gay_lussac_law(P1: pascal, T1: kelvin, T2: kelvin) -> pascal:
     """P2 = P1·T2 / T1  (constant volume).
 
-    [mass/length/time²]·[temperature] / [temperature] = [mass/length/time²] ✓
+    pascal · kelvin / kelvin = pascal ✓
     """
     return P1 * T2 / T1
 
 
 def combined_gas_law(
-    P1: pressure, V1: volume, T1: temperature,
-    V2: volume,  T2: temperature,
-) -> pressure:
+    P1: pascal, V1: cubic_meter, T1: kelvin,
+    V2: cubic_meter, T2: kelvin,
+) -> pascal:
     """P2 = P1·V1·T2 / (V2·T1).
 
     Numerator:
-      P1·V1  → [mass/length/time²]·[length³] = [mass·length²/time²]  (energy)
-      ·T2    → [mass·length²/time²·temperature]
+      P1·V1  → pascal · cubic_meter  = joule  (energy)
+      ·T2    → joule · kelvin
     Denominator:
-      V2·T1  → [length³·temperature]
+      V2·T1  → cubic_meter · kelvin
     Ratio:
-      [mass·length²·temperature/time²] / [length³·temperature]
-      = [mass/length/time²] = pressure ✓
+      joule·kelvin / (cubic_meter·kelvin) = pascal ✓
     """
     return P1 * V1 * T2 / (V2 * T1)
 
@@ -69,12 +61,8 @@ def combined_gas_law(
 # Moderate arithmetic: clamp + relief valve
 # ---------------------------------------------------------------------------
 
-def clamp_pressure(P: pressure, P_min: pressure, P_max: pressure) -> pressure:
-    """Clamp P to the interval [P_min, P_max].
-
-    All three parameters and the return value are [pressure]; mypy verifies
-    that the three branches are dimensionally consistent.
-    """
+def clamp_pressure(P: pascal, P_min: pascal, P_max: pascal) -> pascal:
+    """Clamp P to the interval [P_min, P_max]."""
     if P < P_min:
         return P_min
     if P > P_max:
@@ -83,16 +71,12 @@ def clamp_pressure(P: pressure, P_min: pressure, P_max: pressure) -> pressure:
 
 
 def equilibrate(
-    P1: pressure, V1: volume, T1: temperature,
-    V2: volume,   T2: temperature,
-    P_relief: pressure,
-) -> pressure:
-    """Combined gas law capped by a pressure-relief threshold.
-
-    Two code paths — normal operating pressure and over-pressure —
-    both return [pressure].
-    """
-    P2: pressure = combined_gas_law(P1, V1, T1, V2, T2)
+    P1: pascal, V1: cubic_meter, T1: kelvin,
+    V2: cubic_meter, T2: kelvin,
+    P_relief: pascal,
+) -> pascal:
+    """Combined gas law capped by a pressure-relief threshold."""
+    P2: pascal = combined_gas_law(P1, V1, T1, V2, T2)
     return clamp_pressure(P2, Quantity(0), P_relief)
 
 
@@ -101,16 +85,16 @@ def equilibrate(
 # ---------------------------------------------------------------------------
 
 def select_law(
-    P1: pressure, V1: volume, T1: temperature,
-    new_V: volume,   V_changed: bool,
-    new_T: temperature, T_changed: bool,
-) -> pressure:
+    P1: pascal, V1: cubic_meter, T1: kelvin,
+    new_V: cubic_meter, V_changed: bool,
+    new_T: kelvin, T_changed: bool,
+) -> pascal:
     """Dispatch to the appropriate gas law based on what changed.
 
-    Four branches, each returning [pressure]:
-      both changed  → combined gas law   (P1·V1·T2 / V2·T1)
-      T only        → Gay-Lussac         (P1·T2 / T1)
-      V only        → Boyle's            (P1·V1 / V2)
+    Four branches, each returning pascal:
+      both changed  → combined gas law
+      T only        → Gay-Lussac
+      V only        → Boyle's
       neither       → pressure unchanged
     """
     if T_changed and V_changed:
@@ -123,23 +107,20 @@ def select_law(
 
 
 def compression_ratio(
-    P1: pressure, V1: volume, T1: temperature,
-    V2: volume,   T2: temperature,
-    P_atm: pressure,
-) -> pressure:
+    P1: pascal, V1: cubic_meter, T1: kelvin,
+    V2: cubic_meter, T2: kelvin,
+    P_atm: pascal,
+) -> pascal:
     """Compute final gauge pressure = P2 − P_atm after a compression cycle.
 
-    Gauge pressure is the excess above ambient — still [pressure].
+    Gauge pressure is the excess above ambient — still pascal.
 
-    Dimension trace:
-      P2      = combined_gas_law(...)         → [pressure]
-      P2-P_atm → [pressure] − [pressure]     = [pressure] ✓
-
-    Additionally clamp to zero so that negative gauge values are suppressed.
+    P2 - P_atm → pascal − pascal = pascal ✓
+    Clamped to zero so negative gauge values are suppressed.
     """
-    P2: pressure = combined_gas_law(P1, V1, T1, V2, T2)
+    P2: pascal = combined_gas_law(P1, V1, T1, V2, T2)
     gauge = P2 - P_atm
-    zero: pressure  = Quantity(0)
+    zero: pascal = Quantity(0)
     if gauge < zero:
         return zero
     return gauge

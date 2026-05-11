@@ -1,43 +1,21 @@
-"""Pre-defined unit type aliases using pint dimensionality strings.
+"""Pre-defined unit type aliases.
 
 Import individual names and use them directly as type annotations::
 
     from mypy_units.units import meter, second, meter_per_second
-    from mypy_units import Quantity
 
     def speed(d: meter, t: second) -> meter_per_second: ...
 
-Each alias is a ``TypeAlias`` for ``Quantity[Literal["<dim>"]]`` where the
-Literal value is the pint dimensionality string (e.g. ``"[length] / [time]"``).
-This ensures arithmetic results (which also carry dimensionality strings) match
-declared return types — enabling mypy to catch dimension errors in function bodies.
+Each alias is a unit-specific name for a ``Quantity`` of a given physical
+dimension. Units of the same dimension are mutually compatible as function
+arguments. Arithmetic results propagate dimension information so that the
+mypy plugin can detect mismatches in function bodies and at call sites.
 """
 from __future__ import annotations
 
 from typing import Literal
 
 from mypy_units.quantity import Quantity
-
-# ---------------------------------------------------------------------------
-# Generic dimension aliases (unit-agnostic)
-# ---------------------------------------------------------------------------
-length = Quantity[Literal["[length]"]]
-area = Quantity[Literal["[length] ** 2"]]
-volume = Quantity[Literal["[length] ** 3"]]
-time = Quantity[Literal["[time]"]]
-mass = Quantity[Literal["[mass]"]]
-temperature = Quantity[Literal["[temperature]"]]
-current = Quantity[Literal["[current]"]]
-substance = Quantity[Literal["[substance]"]]
-luminosity = Quantity[Literal["[luminosity]"]]
-velocity = Quantity[Literal["[length] / [time]"]]
-acceleration = Quantity[Literal["[length] / [time] ** 2"]]
-force = Quantity[Literal["[length] * [mass] / [time] ** 2"]]
-pressure = Quantity[Literal["[mass] / [length] / [time] ** 2"]]
-energy = Quantity[Literal["[length] ** 2 * [mass] / [time] ** 2"]]
-power = Quantity[Literal["[length] ** 2 * [mass] / [time] ** 3"]]
-frequency = Quantity[Literal["1 / [time]"]]
-dimensionless = Quantity[Literal["dimensionless"]]
 
 # ---------------------------------------------------------------------------
 # Length

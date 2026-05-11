@@ -46,40 +46,49 @@ def test_unit_to_unit_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Dim→Dim same dimensionality
+# 3. Compound unit from arithmetic matches declared return type
 # ---------------------------------------------------------------------------
-def test_dim_to_dim_match(mypy_fixture: Callable[[str], str]) -> None:
+def test_compound_unit_arithmetic_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def go(d: Quantity[Literal["[length]"]]) -> float: ...
+        from mypy_units.units import joule
 
-        x: Quantity[Literal["[length]"]]
-        go(x)
+        def kinetic_energy(m: kilogram, v: meter_per_second) -> joule:
+            return m * v * v
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 4. Unit("meter") argument to Dim("[length]") parameter — compatible
+# 4. Multiple unit aliases of the same dimension are all interchangeable
 # ---------------------------------------------------------------------------
-def test_unit_arg_to_dim_param_ok(mypy_fixture: Callable[[str], str]) -> None:
+def test_same_dim_units_interchangeable(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def go(d: Quantity[Literal["[length]"]]) -> float: ...
+        from mypy_units.units import centimeter, millimeter
 
-        x: meter
-        go(x)
+        def go(d: meter) -> float: ...
+
+        a: kilometer
+        b: centimeter
+        c: millimeter
+        go(a)
+        go(b)
+        go(c)
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 5. Unit("second") argument to Dim("[length]") parameter — incompatible
+# 5. Compound wrong dimension is rejected at call site
 # ---------------------------------------------------------------------------
-def test_unit_arg_to_dim_param_wrong(mypy_fixture: Callable[[str], str]) -> None:
+def test_compound_unit_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def go(d: Quantity[Literal["[length]"]]) -> float: ...
+        from mypy_units.units import joule, newton
 
-        t: second
-        go(t)
+        def work(f: newton, d: meter) -> joule: ...
+
+        f: newton
+        t: second   # [time] ≠ [length]
+        work(f, t)
     """)
     has_mismatch(out, "d")
 
@@ -128,14 +137,16 @@ def test_invalid_unit_string(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 9. Dimensionless: radian vs [dimensionless]
+# 9. Dimensionless: radian and degree are interchangeable
 # ---------------------------------------------------------------------------
 def test_dimensionless(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def rotate(angle: Quantity[Literal["dimensionless"]]) -> float: ...
+        from mypy_units.units import degree
 
-        a: radian
-        rotate(a)
+        def rotate(angle: radian) -> float: ...
+
+        d: degree
+        rotate(d)
     """)
     no_error(out)
 
@@ -253,10 +264,8 @@ def test_numpy_body_arith(mypy_fixture: Callable[[str], str]) -> None:
 # ---------------------------------------------------------------------------
 def test_numpy_power_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        from mypy_units.units import acceleration, length, time
-
-        def accel(l: length, t: time) -> acceleration:
-            return l / power(t, 2)
+        def accel(d: meter, t: second) -> meter_per_second_squared:
+            return d / power(t, 2)
     """)
     no_error(out)
 
@@ -266,34 +275,30 @@ def test_numpy_power_correct(mypy_fixture: Callable[[str], str]) -> None:
 # ---------------------------------------------------------------------------
 def test_numpy_power_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        from mypy_units.units import velocity, length, time
-
-        def bad(l: length, t: time) -> velocity:
-            return l / power(t, 2)   # [length]/[time]**2, not [length]/[time]
+        def bad(d: meter, t: second) -> meter_per_second:
+            return d / power(t, 2)
     """)
     assert "error:" in out
     assert "return-value" in out or "Incompatible return value" in out
 
 
 # ---------------------------------------------------------------------------
-# 19. sqrt of area gives length
+# 19. sqrt of square_meter gives meter
 # ---------------------------------------------------------------------------
 def test_numpy_sqrt_area_to_length(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def side(a: area) -> length:
+        def side(a: square_meter) -> meter:
             return sqrt(a)
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 20. sqrt of area does not give velocity — caught
+# 20. sqrt of square_meter does not give meter_per_second — caught
 # ---------------------------------------------------------------------------
 def test_numpy_sqrt_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        from mypy_units.units import velocity
-
-        def bad(a: area) -> velocity:
+        def bad(a: square_meter) -> meter_per_second:
             return sqrt(a)
     """)
     assert "error:" in out
@@ -305,10 +310,8 @@ def test_numpy_sqrt_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
 # ---------------------------------------------------------------------------
 def test_np_power_direct_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        from mypy_units.units import acceleration, length, time
-
-        def accel(l: length, t: time) -> acceleration:
-            return l / np.power(t, 2)
+        def accel(d: meter, t: second) -> meter_per_second_squared:
+            return d / np.power(t, 2)
     """)
     no_error(out)
 
@@ -318,21 +321,19 @@ def test_np_power_direct_correct(mypy_fixture: Callable[[str], str]) -> None:
 # ---------------------------------------------------------------------------
 def test_np_power_direct_wrong(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        from mypy_units.units import velocity, length, time
-
-        def bad(l: length, t: time) -> velocity:
-            return l / np.power(t, 2)
+        def bad(d: meter, t: second) -> meter_per_second:
+            return d / np.power(t, 2)
     """)
     assert "error:" in out
     assert "return-value" in out or "Incompatible return value" in out
 
 
 # ---------------------------------------------------------------------------
-# 23. np.sqrt directly — sqrt of area gives length
+# 23. np.sqrt directly — sqrt of square_meter gives meter
 # ---------------------------------------------------------------------------
 def test_np_sqrt_direct_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def side(a: area) -> length:
+        def side(a: square_meter) -> meter:
             return np.sqrt(a)
     """)
     no_error(out)
@@ -343,9 +344,7 @@ def test_np_sqrt_direct_correct(mypy_fixture: Callable[[str], str]) -> None:
 # ---------------------------------------------------------------------------
 def test_np_sqrt_direct_wrong(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        from mypy_units.units import velocity
-
-        def bad(a: area) -> velocity:
+        def bad(a: square_meter) -> meter_per_second:
             return np.sqrt(a)
     """)
     assert "error:" in out

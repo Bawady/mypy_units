@@ -6,8 +6,3 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Unit:
     unit_str: str  # e.g. "meter", "km/h", "kg*m/s^2"
-
-
-@dataclass(frozen=True)
-class Dim:
-    dim_str: str  # e.g. "[length]", "[mass]*[length]/[time]^2"
