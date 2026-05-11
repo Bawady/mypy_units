@@ -25,7 +25,7 @@ class Quantity(Generic[_U_co]):
 
     _value: Any
 
-    def __init__(self, value: Any = 0) -> None:
+    def __init__(self, value: int | float | complex = 0) -> None:
         self._value = value
 
     @property

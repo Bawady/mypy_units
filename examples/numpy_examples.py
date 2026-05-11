@@ -1,9 +1,14 @@
-"""Demonstrates numpy array support — same unit aliases, same dimension checking."""
+"""Demonstrates unit type hints for both scalar floats and numpy arrays.
+
+Scalar functions use plain unit aliases (``meter``, ``second``, …).
+Array functions use ``Array[unit]`` to annotate numpy array operands.
+Both are fully dimension-checked by the mypy plugin.
+"""
 from __future__ import annotations
 
 import numpy as np
 
-from mypy_units import Quantity
+from mypy_units import Array, Quantity
 from mypy_units.units import (
     kilogram,
     meter,
@@ -15,6 +20,9 @@ from mypy_units.units import (
     square_meter,
 )
 
+# ---------------------------------------------------------------------------
+# Scalar functions — unit hint is a plain float alias
+# ---------------------------------------------------------------------------
 
 def speed(distance: meter, t: second) -> meter_per_second:
     return distance / t
@@ -25,31 +33,60 @@ def accel(v: meter_per_second, t: second) -> meter_per_second_squared:
 
 
 def accel2(dist: meter, t: second) -> meter_per_second_squared:
+    """Uses np.power — plugin tracks [length] / [time]**2."""
     return dist / np.power(t, 2)
 
 
-# scalar
+# ---------------------------------------------------------------------------
+# Array functions — unit hint is Array[alias]
+# ---------------------------------------------------------------------------
+
+def speed_arr(distance: Array[meter], t: Array[second]) -> Array[meter_per_second]:
+    return distance / t
+
+
+def accel_arr(v: Array[meter_per_second], t: Array[second]) -> Array[meter_per_second_squared]:
+    return v / t
+
+
+def accel2_arr(dist: Array[meter], t: Array[second]) -> Array[meter_per_second_squared]:
+    """Uses np.power on an array — plugin still tracks the dimension."""
+    return dist / np.power(t, 2)
+
+
+# ---------------------------------------------------------------------------
+# Scalar demo
+# ---------------------------------------------------------------------------
+
 d_scalar: meter = Quantity(10.0)
 t_scalar: second = Quantity(2.0)
-print(speed(d_scalar, t_scalar).value)  # 5.0
+v_scalar: meter_per_second = speed(d_scalar, t_scalar)
+print(f"scalar speed:  {v_scalar.value} m/s")
+print(f"scalar accel2: {accel2(d_scalar, t_scalar).value} m/s²")
 
-# numpy arrays
-d_arr: meter = Quantity(np.array([10.0, 20.0, 30.0]))
-t_arr: second = Quantity(np.array([2.0, 4.0, 5.0]))
-print(speed(d_arr, t_arr).value)
-print(accel2(d_arr, t_arr).value)
+dist: meter = Quantity(10.0)
+m_kg: kilogram = Quantity(2.0)
+t_1: second = Quantity(1.0)
 
-# sqrt: recover meter from square_meter
-area_arr: square_meter = Quantity(np.array([4.0, 9.0, 16.0]))
-side: meter = np.sqrt(area_arr)
-print(side.value)
-
-dist: meter = Quantity(10)
-m: kilogram = Quantity(2)
-t: second = Quantity(1)
-
-p: pascal = m / (dist * t**2)
-p2: pascal = m / dist * t**2
-
+p: pascal = m_kg / (dist * t_1**2)
 f: newton = p * dist**2
-f2: newton = p * dist
+print(f"pressure: {p.value} Pa,  force: {f.value} N")
+
+# ---------------------------------------------------------------------------
+# Array demo
+# ---------------------------------------------------------------------------
+
+d_arr: Array[meter] = Array(np.array([10.0, 20.0, 30.0]))
+t_arr: Array[second] = Array(np.array([2.0, 4.0, 5.0]))
+print(f"array speeds:  {speed_arr(d_arr, t_arr).value}")
+print(f"array accels:  {accel2_arr(d_arr, t_arr).value}")
+
+# sqrt: recover Array[meter] from Array[square_meter]
+area_arr: Array[square_meter] = Array(np.array([4.0, 9.0, 16.0]))
+side_arr: Array[meter] = np.sqrt(area_arr)
+print(f"side lengths:  {side_arr.value}")
+
+# sqrt on a scalar square_meter quantity
+area_scalar: square_meter = Quantity(9.0)
+side_scalar: meter = np.sqrt(area_scalar)
+print(f"scalar side:   {side_scalar.value}")

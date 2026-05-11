@@ -18,7 +18,7 @@ ignore_missing_imports = True
 PREAMBLE = """\
 from __future__ import annotations
 import numpy as np
-from mypy_units import Quantity
+from mypy_units import Quantity, Array
 from mypy_units.units import (
     meter, kilometer, second, kilogram, radian,
     meter_per_second, meter_per_second_squared,

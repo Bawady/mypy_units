@@ -214,49 +214,196 @@ def test_body_arith_wrong(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 14. numpy array wrapped in Quantity — same dimension check applies
+# 14. Array[unit] same dimension — passes dimension check
 # ---------------------------------------------------------------------------
 def test_numpy_array_same_dim(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        import numpy as np
-        from mypy_units import Quantity
+        def travel(d: Array[kilometer]) -> float: ...
 
-        def travel(d: kilometer) -> float: ...
-
-        d_arr: kilometer = Quantity(np.array([1.0, 2.0, 3.0]))
+        d_arr: Array[kilometer] = Array(np.array([1.0, 2.0, 3.0]))
         travel(d_arr)
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 15. numpy array with wrong dimension — still caught
+# 15. Array[unit] wrong dimension — caught
 # ---------------------------------------------------------------------------
 def test_numpy_array_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        import numpy as np
-        from mypy_units import Quantity
+        def travel(d: Array[kilometer]) -> float: ...
 
-        def travel(d: kilometer) -> float: ...
-
-        t_arr: second = Quantity(np.array([1.0, 2.0]))
+        t_arr: Array[second] = Array(np.array([1.0, 2.0]))
         travel(t_arr)
     """)
     has_mismatch(out, "d")
 
 
 # ---------------------------------------------------------------------------
-# 16. numpy body arithmetic — dimension tracked through array ops
+# 16. Array body arithmetic — dimension tracked through array ops
 # ---------------------------------------------------------------------------
 def test_numpy_body_arith(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        import numpy as np
-        from mypy_units import Quantity
-
-        def speed(distance: kilometer, time: second) -> meter_per_second:
+        def speed(distance: Array[kilometer], time: Array[second]) -> Array[meter_per_second]:
             return distance / time
     """)
     no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 25. Quantity rejects numpy ndarray — scalar constructor is float-only
+# ---------------------------------------------------------------------------
+def test_quantity_rejects_ndarray(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        x = Quantity(np.array([1.0, 2.0]))
+    """)
+    assert "error:" in out, f"Expected [arg-type] error for ndarray argument:\n{out}"
+
+
+# ---------------------------------------------------------------------------
+# 26. Array * scalar → Array of correct dimension (body arithmetic)
+# ---------------------------------------------------------------------------
+def test_array_times_scalar_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def distance_covered(v: Array[meter_per_second], t: second) -> Array[meter]:
+            return v * t
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 27. scalar * Array → Array of correct dimension (reversed operands)
+# ---------------------------------------------------------------------------
+def test_scalar_times_array_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def distance_covered(t: second, v: Array[meter_per_second]) -> Array[meter]:
+            return t * v
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 28. Array * scalar wrong return dimension — caught as return-value error
+# ---------------------------------------------------------------------------
+def test_array_times_scalar_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def bad(v: Array[meter_per_second], t: second) -> Array[meter_per_second_squared]:
+            return v * t   # [length], not [length]/[time]**2
+    """)
+    assert "error:" in out
+    assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 29. Scalar passed to Array parameter — type error, not dimension mismatch
+# ---------------------------------------------------------------------------
+def test_scalar_to_array_param_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def func(d: Array[meter]) -> float: ...
+
+        d_scalar: meter = Quantity(5.0)
+        func(d_scalar)
+    """)
+    assert "error:" in out, f"Expected type error:\n{out}"
+    assert "Dimension mismatch" not in out, f"Expected type error, not dim mismatch:\n{out}"
+
+
+# ---------------------------------------------------------------------------
+# 30. Array passed to scalar parameter — type error, not dimension mismatch
+# ---------------------------------------------------------------------------
+def test_array_to_scalar_param_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def func(d: meter) -> float: ...
+
+        d_arr: Array[meter] = Array(np.array([1.0, 2.0]))
+        func(d_arr)
+    """)
+    assert "error:" in out, f"Expected type error:\n{out}"
+    assert "Dimension mismatch" not in out, f"Expected type error, not dim mismatch:\n{out}"
+
+
+# ---------------------------------------------------------------------------
+# 31. Array with same-dimension alias — interchangeable (like scalars)
+# ---------------------------------------------------------------------------
+def test_array_same_dim_interchangeable(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def func(d: Array[meter]) -> float: ...
+
+        d_km: Array[kilometer] = Array(np.array([1.0, 2.0]))
+        func(d_km)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 32. Function with Array and scalar params — correct call, no error
+# ---------------------------------------------------------------------------
+def test_mixed_params_call_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def func(arr: Array[meter_per_second], t: second) -> Array[meter]:
+            return arr * t
+
+        v_arr: Array[meter_per_second] = Array(np.array([1.0, 2.0]))
+        t_val: second = Quantity(2.0)
+        func(v_arr, t_val)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 33. Function with Array and scalar params — wrong scalar dim at call site
+# ---------------------------------------------------------------------------
+def test_mixed_params_call_wrong_scalar_dim(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def func(arr: Array[meter_per_second], t: second) -> Array[meter]:
+            return arr * t
+
+        v_arr: Array[meter_per_second] = Array(np.array([1.0, 2.0]))
+        m_val: kilogram = Quantity(2.0)
+        func(v_arr, m_val)
+    """)
+    has_mismatch(out, "t")
+
+
+# ---------------------------------------------------------------------------
+# 34. Function with Array and scalar params — wrong array dim at call site
+# ---------------------------------------------------------------------------
+def test_mixed_params_call_wrong_array_dim(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def func(arr: Array[meter_per_second], t: second) -> Array[meter]:
+            return arr * t
+
+        v_arr: Array[meter] = Array(np.array([1.0, 2.0]))   # wrong dim
+        t_val: second = Quantity(2.0)
+        func(v_arr, t_val)
+    """)
+    has_mismatch(out, "arr")
+
+
+# ---------------------------------------------------------------------------
+# Runtime: QuantityArray dtype enforcement (no mypy fixture needed)
+# ---------------------------------------------------------------------------
+
+def test_array_rejects_nonnumeric_dtype() -> None:
+    import numpy as np
+    from mypy_units import Array
+    import pytest
+    with pytest.raises(TypeError, match="numeric"):
+        Array(np.array(["hello", "world"]))
+
+
+def test_array_accepts_float64_dtype() -> None:
+    import numpy as np
+    from mypy_units import Array
+    arr = Array(np.array([1.0, 2.0, 3.0]))
+    assert arr.value.dtype == np.float64
+
+
+def test_array_accepts_integer_dtype() -> None:
+    import numpy as np
+    from mypy_units import Array
+    arr = Array(np.array([1, 2, 3]))
+    assert np.issubdtype(arr.value.dtype, np.integer)
 
 
 # ---------------------------------------------------------------------------

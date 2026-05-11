@@ -27,10 +27,9 @@ from mypy_units.dimension import (
 
 _NUMPY_MOD = "mypy_units.numpy"
 
-# Fully-qualified name of our Quantity class.
 _QUANTITY_FULLNAME = "mypy_units.quantity.Quantity"
+_ARRAY_FULLNAME = "mypy_units.array_quantity.QuantityArray"
 
-# builtins that are always accepted as an escape hatch
 _PLAIN_NUMERIC = {"builtins.float", "builtins.int", "builtins.complex"}
 
 
@@ -39,28 +38,78 @@ _PLAIN_NUMERIC = {"builtins.float", "builtins.int", "builtins.complex"}
 # ---------------------------------------------------------------------------
 
 def _unit_str(tp: Type) -> str | None:
-    """Extract the literal unit/dim string from ``Quantity[Literal["..."]]``."""
+    """Extract the dimension string from Quantity[Literal["…"]] or
+    QuantityArray[Quantity[Literal["…"]]]."""
     proper = get_proper_type(tp)
     if not isinstance(proper, Instance):
         return None
-    if proper.type.fullname != _QUANTITY_FULLNAME:
+
+    if proper.type.fullname == _QUANTITY_FULLNAME:
+        if not proper.args:
+            return None
+        arg = get_proper_type(proper.args[0])
+        if isinstance(arg, LiteralType) and isinstance(arg.value, str):
+            return arg.value
         return None
-    if not proper.args:
-        return None
-    arg = get_proper_type(proper.args[0])
-    if isinstance(arg, LiteralType) and isinstance(arg.value, str):
-        return arg.value
+
+    if proper.type.fullname == _ARRAY_FULLNAME:
+        if not proper.args:
+            return None
+        return _unit_str(proper.args[0])  # unwrap the inner Quantity layer
+
     return None
 
 
+def _is_array_type(tp: Type) -> bool:
+    proper = get_proper_type(tp)
+    return isinstance(proper, Instance) and proper.type.fullname == _ARRAY_FULLNAME
+
+
 def _is_escape_hatch(tp: Type) -> bool:
-    """Return True for plain float/int/Any — never flagged."""
     proper = get_proper_type(tp)
     if isinstance(proper, AnyType):
         return True
     if isinstance(proper, Instance) and proper.type.fullname in _PLAIN_NUMERIC:
         return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Unified result-type builder
+#
+# Given a *template* type (Quantity[Literal["old"]] or
+# QuantityArray[Quantity[Literal["old"]]]) and a new dimension string,
+# returns the same wrapper class carrying the new dimension, or None when
+# the template has an unexpected structure.
+# ---------------------------------------------------------------------------
+
+def _make_dim_type(template: Type, dim_str: str) -> Type | None:
+    proper = get_proper_type(template)
+    if not isinstance(proper, Instance):
+        return None
+
+    if proper.type.fullname == _QUANTITY_FULLNAME:
+        if proper.args:
+            arg0 = get_proper_type(proper.args[0])
+            if isinstance(arg0, LiteralType):
+                lit = LiteralType(value=dim_str, fallback=arg0.fallback)
+                return proper.copy_modified(args=[lit, *proper.args[1:]])
+
+    elif proper.type.fullname == _ARRAY_FULLNAME:
+        if proper.args:
+            inner = get_proper_type(proper.args[0])
+            if (
+                isinstance(inner, Instance)
+                and inner.type.fullname == _QUANTITY_FULLNAME
+                and inner.args
+            ):
+                arg0 = get_proper_type(inner.args[0])
+                if isinstance(arg0, LiteralType):
+                    lit = LiteralType(value=dim_str, fallback=arg0.fallback)
+                    new_inner = inner.copy_modified(args=[lit])
+                    return proper.copy_modified(args=[new_inner])
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -134,33 +183,15 @@ def _callee_callable(
 #
 # When mypy type-checks a function body it uses the inferred type of each
 # sub-expression.  These hooks make arithmetic operators return a concrete
-# ``Quantity[Literal["<dim>"]]`` instead of ``Quantity[Any]``, so mypy can
-# compare the final expression type against the declared return annotation and
-# flag a mismatch as a ``[return-value]`` error.
+# Quantity[Literal["<dim>"]] (or QuantityArray[Quantity[Literal["<dim>"]]])
+# instead of Quantity[Any], so mypy can compare the final expression type
+# against the declared return annotation and flag mismatches.
 #
-# The dim strings are pint dimensionality strings, identical to those used as
-# the Literal values in ``mypy_units.units``.
+# Cross-type rule: if either operand is a QuantityArray, the result is a
+# QuantityArray (matching numpy broadcasting semantics).
 # ---------------------------------------------------------------------------
 
-def _build_dim_quantity(ctx: MethodContext, dim_str: str) -> Type:
-    """Return ``Quantity[Literal[dim_str]]`` reusing the LiteralType fallback."""
-    proper = get_proper_type(ctx.type)
-    if not isinstance(proper, Instance):
-        return ctx.default_return_type  # type: ignore[return-value]
-    if proper.args:
-        existing = get_proper_type(proper.args[0])
-        if isinstance(existing, LiteralType):
-            lit = LiteralType(value=dim_str, fallback=existing.fallback)
-            return proper.copy_modified(args=[lit, *proper.args[1:]])
-    return ctx.default_return_type  # type: ignore[return-value]
-
-
 def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
-    """Return a method hook that computes the result dimensionality for *op*.
-
-    *op* is one of ``"*"``, ``"/"``, ``"/r"`` (reversed division, i.e.
-    ``scalar / Quantity``), ``"+"`` / ``"-"`` (same dim), ``"unary"``.
-    """
     def hook(ctx: MethodContext) -> Type:
         self_str = _unit_str(ctx.type)
         if self_str is None:
@@ -171,37 +202,48 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
             return ctx.default_return_type  # type: ignore[return-value]
 
         if op == "unary":
-            return _build_dim_quantity(ctx, canonical_dim_str(self_dim))
+            dim_str = canonical_dim_str(self_dim)
+            result = _make_dim_type(ctx.type, dim_str)
+            return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
 
-        # Get the other operand's dim string (None if plain float/int)
         other_dim = None
+        other_tp: Type | None = None
         if ctx.arg_types and ctx.arg_types[0]:
-            other_str = _unit_str(ctx.arg_types[0][0])
+            other_tp = ctx.arg_types[0][0]
+            other_str = _unit_str(other_tp)
             if other_str is not None:
                 other_dim = resolve(other_str)
 
-        if op in ("+", "-"):
-            # Dimensionality of result equals self; mismatched add/sub is
-            # caught when the result is used (wrong dim propagates).
-            return _build_dim_quantity(ctx, canonical_dim_str(self_dim))
-
         empty: DimDict = {}
 
-        if op == "*":
-            result = dim_mul(self_dim, other_dim if other_dim is not None else empty)
-            return _build_dim_quantity(ctx, canonical_dim_str(result))
-
-        if op == "/":
-            result = dim_div(self_dim, other_dim if other_dim is not None else empty)
-            return _build_dim_quantity(ctx, canonical_dim_str(result))
-
-        if op == "/r":
-            # scalar / self  →  dimensionless / self_dim
+        if op in ("+", "-"):
+            result_dim = self_dim
+        elif op == "*":
+            result_dim = dim_mul(self_dim, other_dim if other_dim is not None else empty)
+        elif op == "/":
+            result_dim = dim_div(self_dim, other_dim if other_dim is not None else empty)
+        elif op == "/r":
             numerator = other_dim if other_dim is not None else empty
-            result = dim_div(numerator, self_dim)
-            return _build_dim_quantity(ctx, canonical_dim_str(result))
+            result_dim = dim_div(numerator, self_dim)
+        else:
+            return ctx.default_return_type  # type: ignore[return-value]
 
-        return ctx.default_return_type  # type: ignore[return-value]
+        dim_str = canonical_dim_str(result_dim)
+
+        # When self is a scalar Quantity but other is a QuantityArray, use
+        # the array operand as the result template so the return type is
+        # QuantityArray rather than Quantity.
+        if (
+            not _is_array_type(ctx.type)
+            and other_tp is not None
+            and _is_array_type(other_tp)
+        ):
+            result = _make_dim_type(other_tp, dim_str)
+            if result is not None:
+                return result
+
+        result = _make_dim_type(ctx.type, dim_str)
+        return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
 
     return hook
 
@@ -223,26 +265,34 @@ def _make_pow_hook() -> Callable[[MethodContext], Type]:
         if exp is None:
             return ctx.default_return_type  # type: ignore[return-value]
 
-        return _build_dim_quantity(ctx, canonical_dim_str(dim_pow(self_dim, exp)))
+        dim_str = canonical_dim_str(dim_pow(self_dim, exp))
+        result = _make_dim_type(ctx.type, dim_str)
+        return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
 
     return hook
 
 
-# Map Quantity arithmetic method fullnames → their hooks.
+def _arith_hooks_for(fullname: str) -> dict[str, Callable[[MethodContext], Type]]:
+    return {
+        f"{fullname}.__add__":      _make_arith_hook("+"),
+        f"{fullname}.__radd__":     _make_arith_hook("+"),
+        f"{fullname}.__sub__":      _make_arith_hook("-"),
+        f"{fullname}.__rsub__":     _make_arith_hook("-"),
+        f"{fullname}.__mul__":      _make_arith_hook("*"),
+        f"{fullname}.__rmul__":     _make_arith_hook("*"),
+        f"{fullname}.__truediv__":  _make_arith_hook("/"),
+        f"{fullname}.__floordiv__": _make_arith_hook("/"),
+        f"{fullname}.__rtruediv__": _make_arith_hook("/r"),
+        f"{fullname}.__neg__":      _make_arith_hook("unary"),
+        f"{fullname}.__pos__":      _make_arith_hook("unary"),
+        f"{fullname}.__abs__":      _make_arith_hook("unary"),
+        f"{fullname}.__pow__":      _make_pow_hook(),
+    }
+
+
 _ARITH_HOOKS: dict[str, Callable[[MethodContext], Type]] = {
-    f"{_QUANTITY_FULLNAME}.__add__":      _make_arith_hook("+"),
-    f"{_QUANTITY_FULLNAME}.__radd__":     _make_arith_hook("+"),
-    f"{_QUANTITY_FULLNAME}.__sub__":      _make_arith_hook("-"),
-    f"{_QUANTITY_FULLNAME}.__rsub__":     _make_arith_hook("-"),
-    f"{_QUANTITY_FULLNAME}.__mul__":      _make_arith_hook("*"),
-    f"{_QUANTITY_FULLNAME}.__rmul__":     _make_arith_hook("*"),
-    f"{_QUANTITY_FULLNAME}.__truediv__":  _make_arith_hook("/"),
-    f"{_QUANTITY_FULLNAME}.__floordiv__": _make_arith_hook("/"),
-    f"{_QUANTITY_FULLNAME}.__rtruediv__": _make_arith_hook("/r"),
-    f"{_QUANTITY_FULLNAME}.__neg__":      _make_arith_hook("unary"),
-    f"{_QUANTITY_FULLNAME}.__pos__":      _make_arith_hook("unary"),
-    f"{_QUANTITY_FULLNAME}.__abs__":      _make_arith_hook("unary"),
-    f"{_QUANTITY_FULLNAME}.__pow__":      _make_pow_hook(),
+    **_arith_hooks_for(_QUANTITY_FULLNAME),
+    **_arith_hooks_for(_ARRAY_FULLNAME),
 }
 
 
@@ -271,7 +321,10 @@ def _make_method_hook(fullname: str) -> Callable[[MethodContext], Type]:
 
 
 # ---------------------------------------------------------------------------
-# Signature hook — widens Quantity[Literal["..."]] params to Quantity[Any]
+# Signature hook — widens Quantity[Literal["…"]] and
+# QuantityArray[Quantity[Literal["…"]]] params to Quantity[Any] /
+# QuantityArray[Any] so mypy never emits spurious [arg-type] errors before
+# the plugin's own dimension check runs.
 # ---------------------------------------------------------------------------
 
 def _make_sig_hook(fullname: str) -> Callable[[FunctionSigContext], CallableType]:
@@ -298,27 +351,9 @@ def _make_sig_hook(fullname: str) -> Callable[[FunctionSigContext], CallableType
 # NumPy function hooks — dimension-aware wrappers in mypy_units.numpy
 # ---------------------------------------------------------------------------
 
-def _make_quantity_type(template_tp: Type, dim_str: str) -> Type | None:
-    """Build ``Quantity[Literal[dim_str]]`` using *template_tp* as a model."""
-    proper = get_proper_type(template_tp)
-    if not isinstance(proper, Instance):
-        return None
-    if proper.args:
-        arg0 = get_proper_type(proper.args[0])
-        if isinstance(arg0, LiteralType):
-            lit = LiteralType(value=dim_str, fallback=arg0.fallback)
-            return proper.copy_modified(args=[lit, *proper.args[1:]])
-    return None
-
-
 def _read_numeric_arg(
     context: object, arg_types: list[list[Type]], arg_idx: int
 ) -> int | float | None:
-    """Extract a numeric literal from a call's arg at *arg_idx*.
-
-    Works for both FunctionContext and MethodContext (pass ctx.context and
-    ctx.arg_types respectively).
-    """
     if len(arg_types) > arg_idx and arg_types[arg_idx]:
         tp = get_proper_type(arg_types[arg_idx][0])
         if isinstance(tp, LiteralType) and isinstance(tp.value, (int, float)):
@@ -347,7 +382,7 @@ def _make_numpy_power_hook() -> Callable[[FunctionContext], Type]:
         if exp is None:
             return ctx.default_return_type  # type: ignore[return-value]
         result_dim = dim_pow(base_dim, exp)
-        result = _make_quantity_type(base_tp, canonical_dim_str(result_dim))
+        result = _make_dim_type(base_tp, canonical_dim_str(result_dim))
         if result is None:
             return ctx.default_return_type  # type: ignore[return-value]
         return result
@@ -355,7 +390,6 @@ def _make_numpy_power_hook() -> Callable[[FunctionContext], Type]:
 
 
 def _make_numpy_unary_dim_hook(exp: Fraction) -> Callable[[FunctionContext], Type]:
-    """Return a hook for unary functions where result dim = input dim ** exp."""
     def hook(ctx: FunctionContext) -> Type:
         if not ctx.arg_types or not ctx.arg_types[0]:
             return ctx.default_return_type  # type: ignore[return-value]
@@ -367,7 +401,7 @@ def _make_numpy_unary_dim_hook(exp: Fraction) -> Callable[[FunctionContext], Typ
         if arg_dim is None:
             return ctx.default_return_type  # type: ignore[return-value]
         result_dim = dim_pow(arg_dim, float(exp))
-        result = _make_quantity_type(arg_tp, canonical_dim_str(result_dim))
+        result = _make_dim_type(arg_tp, canonical_dim_str(result_dim))
         if result is None:
             return ctx.default_return_type  # type: ignore[return-value]
         return result
@@ -382,19 +416,13 @@ _NUMPY_FUNCTION_HOOKS: dict[str, Callable[[FunctionContext], Type]] = {
 
 # ---------------------------------------------------------------------------
 # NumPy ufunc method hooks — hooks np.power / np.sqrt / np.cbrt directly
-#
-# np.power is typed as _UFunc_Nin2_Nout1[Literal["power"], ...], so we hook
-# _UFunc_Nin2_Nout1.__call__ and dispatch by the ufunc name in args[0].
-# Similarly for _UFunc_Nin1_Nout1 (sqrt, cbrt).
 # ---------------------------------------------------------------------------
 
 _NP_UFUNC_PKG = "numpy._typing._ufunc"
 
-# ufunc name -> (n_inputs, exponent_or_None)
-# exponent_or_None: None means "read from arg 1" (for power)
 _UFUNC_DIM_RULES: dict[str, tuple[int, Fraction | None]] = {
-    "power":      (2, None),              # exp from arg 1
-    "float_power": (2, None),             # same
+    "power":      (2, None),
+    "float_power": (2, None),
     "sqrt":       (1, Fraction(1, 2)),
     "cbrt":       (1, Fraction(1, 3)),
     "square":     (1, Fraction(2)),
@@ -403,7 +431,6 @@ _UFUNC_DIM_RULES: dict[str, tuple[int, Fraction | None]] = {
 
 
 def _ufunc_name_from_ctx(ctx: MethodContext) -> str | None:
-    """Extract the ufunc name from ctx.type.args[0] (a Literal["name"])."""
     proper = get_proper_type(ctx.type)
     if not isinstance(proper, Instance) or not proper.args:
         return None
@@ -432,7 +459,6 @@ def _make_ufunc_call_hook() -> Callable[[MethodContext], Type]:
             return ctx.default_return_type  # type: ignore[return-value]
 
         if fixed_exp is None:
-            # read exponent from second argument
             raw_exp = _read_numeric_arg(ctx.context, ctx.arg_types, 1)
             if raw_exp is None:
                 return ctx.default_return_type  # type: ignore[return-value]
@@ -441,7 +467,7 @@ def _make_ufunc_call_hook() -> Callable[[MethodContext], Type]:
             exp = float(fixed_exp)
 
         result_dim = dim_pow(base_dim, exp)
-        result = _make_quantity_type(base_tp, canonical_dim_str(result_dim))
+        result = _make_dim_type(base_tp, canonical_dim_str(result_dim))
         if result is None:
             return ctx.default_return_type  # type: ignore[return-value]
         return result
