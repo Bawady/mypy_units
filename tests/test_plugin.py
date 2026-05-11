@@ -386,14 +386,16 @@ def test_mixed_params_call_wrong_array_dim(mypy_fixture: Callable[[str], str]) -
 
 def test_array_rejects_nonnumeric_dtype() -> None:
     import numpy as np
-    from mypy_units import Array
     import pytest
+
+    from mypy_units import Array
     with pytest.raises(TypeError, match="numeric"):
         Array(np.array(["hello", "world"]))
 
 
 def test_array_accepts_float64_dtype() -> None:
     import numpy as np
+
     from mypy_units import Array
     arr = Array(np.array([1.0, 2.0, 3.0]))
     assert arr.value.dtype == np.float64
@@ -401,6 +403,7 @@ def test_array_accepts_float64_dtype() -> None:
 
 def test_array_accepts_integer_dtype() -> None:
     import numpy as np
+
     from mypy_units import Array
     arr = Array(np.array([1, 2, 3]))
     assert np.issubdtype(arr.value.dtype, np.integer)
