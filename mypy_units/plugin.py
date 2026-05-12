@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from fractions import Fraction
+from typing import Any
 
 from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, NameExpr, OpExpr
 from mypy.plugin import FunctionContext, FunctionSigContext, MethodContext, Plugin
@@ -70,7 +71,7 @@ def _is_escape_hatch(tp: Type) -> bool:
     return False
 
 
-def _canonical(q) -> str:
+def _canonical(q: Any) -> str:
     """Convert a pint Quantity to a canonical base-unit literal string."""
     b = q.to_base_units()
     mag = float(b.magnitude)

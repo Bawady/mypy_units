@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import re
 from fractions import Fraction
+from typing import Any
 
 try:
     import pintrs as pint
@@ -204,6 +205,6 @@ def to_base_literal(unit_str: str) -> str:
 
 
 @functools.lru_cache(maxsize=512)
-def parse_base_literal(canonical: str):  # -> pint.Quantity
+def parse_base_literal(canonical: str) -> Any:
     """Parse a canonical base-unit literal string back to a pint Quantity."""
     return _registry().parse_expression(canonical).to_base_units()
