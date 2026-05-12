@@ -10,7 +10,7 @@ Type-check:  mypy examples/gas_laws.py
 from __future__ import annotations
 
 from mypy_units import Quantity
-from mypy_units.units import bar, cubic_meter, kelvin, pascal
+from mypy_units.units import cubic_meter, kelvin, pascal
 
 # ---------------------------------------------------------------------------
 # Classical gas laws (one-liners)
