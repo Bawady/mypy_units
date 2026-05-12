@@ -16,7 +16,7 @@ from mypy_units.units import bar, cubic_meter, kelvin, pascal
 # Classical gas laws (one-liners)
 # ---------------------------------------------------------------------------
 
-def boyles_law(P1: pascal, V1: cubic_meter, V2: cubic_meter) -> bar:
+def boyles_law(P1: pascal, V1: cubic_meter, V2: cubic_meter) -> pascal:
     """P2 = P1·V1 / V2  (constant temperature).
 
     pascal · cubic_meter / cubic_meter = pascal ✓

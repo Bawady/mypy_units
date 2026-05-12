@@ -188,11 +188,11 @@ def test_return_type_chain_wrong(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 12. Body arithmetic — dimensionally correct, no error
+# 12. Body arithmetic — dimensionally and scaling correct, no error
 # ---------------------------------------------------------------------------
 def test_body_arith_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def speed(distance: kilometer, time: second) -> meter_per_second:
+        def speed(distance: meter, time: second) -> meter_per_second:
             return distance / time
     """)
     no_error(out)
@@ -240,11 +240,11 @@ def test_numpy_array_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 16. Array body arithmetic — dimension tracked through array ops
+# 16. Array body arithmetic — dimension and scaling tracked through array ops
 # ---------------------------------------------------------------------------
 def test_numpy_body_arith(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def speed(distance: Array[kilometer], time: Array[second]) -> Array[meter_per_second]:
+        def speed(distance: Array[meter], time: Array[second]) -> Array[meter_per_second]:
             return distance / time
     """)
     no_error(out)
@@ -499,3 +499,157 @@ def test_np_sqrt_direct_wrong(mypy_fixture: Callable[[str], str]) -> None:
     """)
     assert "error:" in out
     assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 35. ConversionFactor: 3.6 * (m/s) → km/h — accepted
+# ---------------------------------------------------------------------------
+def test_conversion_factor_mul_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def speed_in_kmh(d: meter, t: second) -> kilometer_per_hour:
+            return ConversionFactor(3.6) * d / t
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 36. ConversionFactor: wrong factor — return-value error
+# ---------------------------------------------------------------------------
+def test_conversion_factor_wrong_value(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def bad(d: meter, t: second) -> kilometer_per_hour:
+            return ConversionFactor(1) * d / t   # 1 m/s ≠ km/h scale
+    """)
+    assert "error:" in out
+    assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 37. ConversionFactor: (second) / ConversionFactor(3600) → hour — accepted
+# ---------------------------------------------------------------------------
+def test_conversion_factor_div_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def travel_time_hours(d: meter, v: meter_per_second) -> hour:
+            return (d / v) / ConversionFactor(3600)
+    """)
+    no_error(out)
+
+
+# ===========================================================================
+# ConversionFactor: comprehensive positive / negative test suite
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# 38. CF necessary but missing (no scalar at all) — return-value error
+# ---------------------------------------------------------------------------
+def test_cf_missing_no_scalar(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def speed_wrong(d: meter, t: second) -> kilometer_per_hour:
+            return d / t   # m/s ≠ km/h, no conversion
+    """)
+    assert "error:" in out
+    assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 39. CF necessary but missing (plain float used, not wrapped) — return-value error
+# ---------------------------------------------------------------------------
+def test_cf_missing_plain_float(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def speed_wrong(d: meter, t: second) -> kilometer_per_hour:
+            return 3.6 * d / t   # plain scalar: no type effect, still m/s
+    """)
+    assert "error:" in out
+    assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 40. CF necessary but wrong value — return-value error
+# ---------------------------------------------------------------------------
+def test_cf_necessary_wrong_value(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def speed_wrong(d: meter, t: second) -> kilometer_per_hour:
+            return ConversionFactor(2) * d / t   # 2 ≠ 3.6
+    """)
+    assert "error:" in out
+    assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 41. CF(1) on already-correct expression — type is preserved, no error
+# ---------------------------------------------------------------------------
+def test_cf_unity_preserves_correct_type(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def speed(d: meter, t: second) -> meter_per_second:
+            return ConversionFactor(1) * d / t   # CF(1): scale / 1 = unchanged
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 42. CF(1) does NOT fix a scale-wrong expression — still fails
+# ---------------------------------------------------------------------------
+def test_cf_unity_does_not_fix_wrong_scale(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def speed_wrong(d: meter, t: second) -> kilometer_per_hour:
+            return ConversionFactor(1) * d / t   # m/s ≠ km/h regardless of CF(1)
+    """)
+    assert "error:" in out
+    assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 43. CF in a variable assignment — correct factor accepted
+# ---------------------------------------------------------------------------
+def test_cf_assignment_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        d: meter = Quantity(100.0)
+        t: second = Quantity(50.0)
+        v: kilometer_per_hour = ConversionFactor(3.6) * d / t
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 44. CF in a variable assignment — wrong factor rejected
+# ---------------------------------------------------------------------------
+def test_cf_assignment_wrong_factor(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        d: meter = Quantity(100.0)
+        t: second = Quantity(50.0)
+        v: kilometer_per_hour = ConversionFactor(2) * d / t   # 2 ≠ 3.6
+    """)
+    assert "error:" in out
+
+
+# ---------------------------------------------------------------------------
+# 45. Assign meter Quantity to kilometer via division by ConversionFactor(1000)
+# ---------------------------------------------------------------------------
+def test_cf_unit_reassign_div(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        d_m: meter = Quantity(1000.0)
+        d_km: kilometer = d_m / ConversionFactor(1000)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 46. Assign kilometer Quantity to meter via multiplication by ConversionFactor(1000)
+# ---------------------------------------------------------------------------
+def test_cf_unit_reassign_mul(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        d_km: kilometer = Quantity(1.0)
+        d_m: meter = d_km * ConversionFactor(1000)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 47. Same-dimension unit reassignment with wrong CF value — rejected
+# ---------------------------------------------------------------------------
+def test_cf_unit_reassign_wrong_factor(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        d_m: meter = Quantity(1000.0)
+        d_km: kilometer = d_m / ConversionFactor(100)   # 100 ≠ 1000
+    """)
+    assert "error:" in out

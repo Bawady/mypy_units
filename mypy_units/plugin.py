@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from fractions import Fraction
 
-from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, OpExpr
+from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, NameExpr, OpExpr
 from mypy.plugin import FunctionContext, FunctionSigContext, MethodContext, Plugin
 from mypy.types import (
     AnyType,
@@ -16,12 +16,8 @@ from mypy.types import (
 )
 
 from mypy_units.dimension import (
-    DimDict,
-    canonical_dim_str,
-    dim_div,
-    dim_mul,
-    dim_pow,
     dims_equal,
+    parse_base_literal,
     resolve,
 )
 
@@ -72,6 +68,16 @@ def _is_escape_hatch(tp: Type) -> bool:
     if isinstance(proper, Instance) and proper.type.fullname in _PLAIN_NUMERIC:
         return True
     return False
+
+
+def _canonical(q) -> str:
+    """Convert a pint Quantity to a canonical base-unit literal string."""
+    b = q.to_base_units()
+    mag = float(b.magnitude)
+    units_str = str(b.units)
+    if not units_str:
+        units_str = "dimensionless"
+    return units_str if mag == 1.0 else f"{mag:.15g} {units_str}"
 
 
 # ---------------------------------------------------------------------------
@@ -191,44 +197,108 @@ def _callee_callable(
 # QuantityArray (matching numpy broadcasting semantics).
 # ---------------------------------------------------------------------------
 
+def _get_cf_value(node: object) -> float | None:
+    """Extract the scalar from a ``ConversionFactor(x)`` AST call node.
+
+    Returns the numeric value when *node* is ``ConversionFactor(<literal>)``,
+    otherwise returns ``None``.  Both int and float literals are accepted;
+    zero is rejected (undefined conversion).
+    """
+    if not isinstance(node, CallExpr):
+        return None
+    callee = node.callee
+    # Match by name; a fully-qualified check would be more robust but
+    # NameExpr.fullname is not always resolved at hook call time.
+    if not isinstance(callee, NameExpr) or callee.name != "ConversionFactor":
+        return None
+    if not node.args:
+        return None
+    arg = node.args[0]
+    if isinstance(arg, IntExpr):
+        v = float(arg.value)
+        return v if v != 0.0 else None
+    if isinstance(arg, FloatExpr):
+        v = float(arg.value)
+        return v if v != 0.0 else None
+    return None
+
+
+def _get_cf_scalar_from_op(ctx: MethodContext) -> float | None:
+    """Look for a ``ConversionFactor(x)`` call on either side of an OpExpr.
+
+    Handles ``quantity * ConversionFactor(k)`` (k on right),
+    ``ConversionFactor(k) * quantity`` via __rmul__ (k on left), and
+    ``quantity / ConversionFactor(k)`` (k on right).
+    """
+    if not isinstance(ctx.context, OpExpr):
+        return None
+    for node in (ctx.context.left, ctx.context.right):
+        k = _get_cf_value(node)
+        if k is not None:
+            return k
+    return None
+
+
 def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
     def hook(ctx: MethodContext) -> Type:
         self_str = _unit_str(ctx.type)
         if self_str is None:
             return ctx.default_return_type  # type: ignore[return-value]
 
-        self_dim = resolve(self_str)
-        if self_dim is None:
-            return ctx.default_return_type  # type: ignore[return-value]
-
         if op == "unary":
-            dim_str = canonical_dim_str(self_dim)
-            result = _make_dim_type(ctx.type, dim_str)
+            result = _make_dim_type(ctx.type, self_str)
             return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
 
-        other_dim = None
+        other_q = None
         other_tp: Type | None = None
+
         if ctx.arg_types and ctx.arg_types[0]:
             other_tp = ctx.arg_types[0][0]
             other_str = _unit_str(other_tp)
             if other_str is not None:
-                other_dim = resolve(other_str)
+                try:
+                    other_q = parse_base_literal(other_str)
+                except Exception:
+                    pass
 
-        empty: DimDict = {}
+        try:
+            self_q = parse_base_literal(self_str)
 
-        if op in ("+", "-"):
-            result_dim = self_dim
-        elif op == "*":
-            result_dim = dim_mul(self_dim, other_dim if other_dim is not None else empty)
-        elif op == "/":
-            result_dim = dim_div(self_dim, other_dim if other_dim is not None else empty)
-        elif op == "/r":
-            numerator = other_dim if other_dim is not None else empty
-            result_dim = dim_div(numerator, self_dim)
-        else:
+            if op in ("+", "-"):
+                result_q = self_q
+            elif op == "*":
+                if other_q is not None:
+                    # Quantity × Quantity: standard dimensional multiplication.
+                    result_q = self_q * other_q
+                else:
+                    # Quantity × ConversionFactor(k) or ConversionFactor(k) × Quantity.
+                    # Multiplying the VALUE by k converts to a k-times-smaller unit,
+                    # preserving the physical quantity: (k·v) × (S/k) = v × S.
+                    # Plain scalars (literals, variables) leave the unit unchanged.
+                    k = _get_cf_scalar_from_op(ctx)
+                    result_q = self_q / k if k is not None else self_q
+            elif op == "/":
+                if other_q is not None:
+                    # Quantity / Quantity: standard dimensional division.
+                    result_q = self_q / other_q
+                else:
+                    # Quantity / ConversionFactor(k).
+                    # Dividing the VALUE by k converts to a k-times-larger unit:
+                    # (v/k) × (S·k) = v × S.
+                    k = _get_cf_scalar_from_op(ctx)
+                    result_q = self_q * k if k is not None else self_q
+            elif op == "/r":
+                if other_q is not None:
+                    result_q = other_q / self_q
+                else:
+                    # scalar / Quantity: invert the unit; ignore the scalar magnitude.
+                    result_q = 1.0 / self_q
+            else:
+                return ctx.default_return_type  # type: ignore[return-value]
+
+            dim_str = _canonical(result_q)
+        except Exception:
             return ctx.default_return_type  # type: ignore[return-value]
-
-        dim_str = canonical_dim_str(result_dim)
 
         # When self is a scalar Quantity but other is a QuantityArray, use
         # the array operand as the result template so the return type is
@@ -253,9 +323,6 @@ def _make_pow_hook() -> Callable[[MethodContext], Type]:
         self_str = _unit_str(ctx.type)
         if self_str is None:
             return ctx.default_return_type  # type: ignore[return-value]
-        self_dim = resolve(self_str)
-        if self_dim is None:
-            return ctx.default_return_type  # type: ignore[return-value]
 
         # mypy widens integer literals to int when the param is int|float,
         # so we read the exponent directly from the AST instead.
@@ -265,7 +332,12 @@ def _make_pow_hook() -> Callable[[MethodContext], Type]:
         if exp is None:
             return ctx.default_return_type  # type: ignore[return-value]
 
-        dim_str = canonical_dim_str(dim_pow(self_dim, exp))
+        try:
+            result_q = parse_base_literal(self_str) ** exp
+            dim_str = _canonical(result_q)
+        except Exception:
+            return ctx.default_return_type  # type: ignore[return-value]
+
         result = _make_dim_type(ctx.type, dim_str)
         return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
 
@@ -375,17 +447,16 @@ def _make_numpy_power_hook() -> Callable[[FunctionContext], Type]:
         base_str = _unit_str(base_tp)
         if base_str is None:
             return ctx.default_return_type  # type: ignore[return-value]
-        base_dim = resolve(base_str)
-        if base_dim is None:
-            return ctx.default_return_type  # type: ignore[return-value]
         exp = _read_numeric_arg(ctx.context, ctx.arg_types, 1)
         if exp is None:
             return ctx.default_return_type  # type: ignore[return-value]
-        result_dim = dim_pow(base_dim, exp)
-        result = _make_dim_type(base_tp, canonical_dim_str(result_dim))
-        if result is None:
+        try:
+            result_q = parse_base_literal(base_str) ** exp
+            dim_str = _canonical(result_q)
+        except Exception:
             return ctx.default_return_type  # type: ignore[return-value]
-        return result
+        result = _make_dim_type(base_tp, dim_str)
+        return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
     return hook
 
 
@@ -397,14 +468,13 @@ def _make_numpy_unary_dim_hook(exp: Fraction) -> Callable[[FunctionContext], Typ
         arg_str = _unit_str(arg_tp)
         if arg_str is None:
             return ctx.default_return_type  # type: ignore[return-value]
-        arg_dim = resolve(arg_str)
-        if arg_dim is None:
+        try:
+            result_q = parse_base_literal(arg_str) ** float(exp)
+            dim_str = _canonical(result_q)
+        except Exception:
             return ctx.default_return_type  # type: ignore[return-value]
-        result_dim = dim_pow(arg_dim, float(exp))
-        result = _make_dim_type(arg_tp, canonical_dim_str(result_dim))
-        if result is None:
-            return ctx.default_return_type  # type: ignore[return-value]
-        return result
+        result = _make_dim_type(arg_tp, dim_str)
+        return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
     return hook
 
 
@@ -454,9 +524,6 @@ def _make_ufunc_call_hook() -> Callable[[MethodContext], Type]:
         base_str = _unit_str(base_tp)
         if base_str is None:
             return ctx.default_return_type  # type: ignore[return-value]
-        base_dim = resolve(base_str)
-        if base_dim is None:
-            return ctx.default_return_type  # type: ignore[return-value]
 
         if fixed_exp is None:
             raw_exp = _read_numeric_arg(ctx.context, ctx.arg_types, 1)
@@ -466,11 +533,14 @@ def _make_ufunc_call_hook() -> Callable[[MethodContext], Type]:
         else:
             exp = float(fixed_exp)
 
-        result_dim = dim_pow(base_dim, exp)
-        result = _make_dim_type(base_tp, canonical_dim_str(result_dim))
-        if result is None:
+        try:
+            result_q = parse_base_literal(base_str) ** exp
+            dim_str = _canonical(result_q)
+        except Exception:
             return ctx.default_return_type  # type: ignore[return-value]
-        return result
+
+        result = _make_dim_type(base_tp, dim_str)
+        return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
 
     return hook
 

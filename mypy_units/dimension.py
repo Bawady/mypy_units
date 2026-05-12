@@ -147,3 +147,63 @@ def dim_pow(a: DimDict, exp: int | float) -> DimDict:
     if frac_exp == 0:
         return {}
     return {k: v * frac_exp for k, v in a.items()}
+
+
+# ---------------------------------------------------------------------------
+# Pint-based canonical literal helpers
+#
+# The canonical literal is a pint-parseable string that encodes both the
+# physical dimension AND the SI base-unit scale factor of a unit.  Examples:
+#
+#   "m"                          meter (magnitude 1, already base)
+#   "1000 m"                     kilometer
+#   "3600 s"                     hour
+#   "0.277777777777778 m / s"    kilometer_per_hour
+#   "dimensionless"              radian / steradian
+#   "0.0174532925199433 dimensionless"   degree
+#
+# Units whose alias names are not directly pint-parseable (e.g. compound
+# names like "square_meter") are translated via _UNIT_MAP before the pint
+# call.  There is no fallback to dimension-only checking; an unrecognised
+# unit string raises ValueError.
+# ---------------------------------------------------------------------------
+
+_UNIT_MAP: dict[str, str] = {
+    "square_meter":             "m**2",
+    "cubic_meter":              "m**3",
+    "meter_per_second":         "m/s",
+    "kilometer_per_hour":       "km/h",
+    "meter_per_second_squared": "m/s**2",
+    # Offset temperature units: map to Kelvin-scale equivalents so that
+    # only the multiplicative scale factor is used (no offset arithmetic).
+    "degC": "K",
+    "degF": "0.5555555555555556 K",
+}
+
+
+def _fmt_canonical(magnitude: float, units_str: str) -> str:
+    """Format a (magnitude, units) pair into a canonical literal string."""
+    if not units_str:
+        units_str = "dimensionless"
+    if magnitude == 1.0:
+        return units_str
+    return f"{magnitude:.15g} {units_str}"
+
+
+@functools.lru_cache(maxsize=512)
+def to_base_literal(unit_str: str) -> str:
+    """Convert a unit alias string to its pint SI base-unit canonical form.
+
+    The result is a pint-parseable string that encodes both the dimension and
+    the scale factor.  Raises ``pint.UndefinedUnitError`` (or similar) for
+    unrecognised units — there is no silent fallback.
+    """
+    pint_str = _UNIT_MAP.get(unit_str, unit_str)
+    q = _registry().parse_expression(pint_str).to_base_units()
+    return _fmt_canonical(float(q.magnitude), str(q.units))
+
+
+@functools.lru_cache(maxsize=512)
+def parse_base_literal(canonical: str):  # -> pint.Quantity
+    """Parse a canonical base-unit literal string back to a pint Quantity."""
+    return _registry().parse_expression(canonical).to_base_units()
