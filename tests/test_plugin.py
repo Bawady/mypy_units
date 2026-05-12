@@ -220,7 +220,7 @@ def test_numpy_array_same_dim(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def travel(d: Array[kilometer]) -> float: ...
 
-        d_arr: Array[kilometer] = Array(np.array([1.0, 2.0, 3.0]))
+        d_arr: Array[kilometer] = QuantityArray(np.array([1.0, 2.0, 3.0]))
         travel(d_arr)
     """)
     no_error(out)
@@ -233,7 +233,7 @@ def test_numpy_array_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def travel(d: Array[kilometer]) -> float: ...
 
-        t_arr: Array[second] = Array(np.array([1.0, 2.0]))
+        t_arr: Array[second] = QuantityArray(np.array([1.0, 2.0]))
         travel(t_arr)
     """)
     has_mismatch(out, "d")
@@ -315,7 +315,7 @@ def test_array_to_scalar_param_rejected(mypy_fixture: Callable[[str], str]) -> N
     out = mypy_fixture("""
         def func(d: meter) -> float: ...
 
-        d_arr: Array[meter] = Array(np.array([1.0, 2.0]))
+        d_arr: Array[meter] = QuantityArray(np.array([1.0, 2.0]))
         func(d_arr)
     """)
     assert "error:" in out, f"Expected type error:\n{out}"
@@ -329,7 +329,7 @@ def test_array_same_dim_interchangeable(mypy_fixture: Callable[[str], str]) -> N
     out = mypy_fixture("""
         def func(d: Array[meter]) -> float: ...
 
-        d_km: Array[kilometer] = Array(np.array([1.0, 2.0]))
+        d_km: Array[kilometer] = QuantityArray(np.array([1.0, 2.0]))
         func(d_km)
     """)
     no_error(out)
@@ -343,7 +343,7 @@ def test_mixed_params_call_correct(mypy_fixture: Callable[[str], str]) -> None:
         def func(arr: Array[meter_per_second], t: second) -> Array[meter]:
             return arr * t
 
-        v_arr: Array[meter_per_second] = Array(np.array([1.0, 2.0]))
+        v_arr: Array[meter_per_second] = QuantityArray(np.array([1.0, 2.0]))
         t_val: second = Quantity(2.0)
         func(v_arr, t_val)
     """)
@@ -358,7 +358,7 @@ def test_mixed_params_call_wrong_scalar_dim(mypy_fixture: Callable[[str], str]) 
         def func(arr: Array[meter_per_second], t: second) -> Array[meter]:
             return arr * t
 
-        v_arr: Array[meter_per_second] = Array(np.array([1.0, 2.0]))
+        v_arr: Array[meter_per_second] = QuantityArray(np.array([1.0, 2.0]))
         m_val: kilogram = Quantity(2.0)
         func(v_arr, m_val)
     """)
@@ -373,7 +373,7 @@ def test_mixed_params_call_wrong_array_dim(mypy_fixture: Callable[[str], str]) -
         def func(arr: Array[meter_per_second], t: second) -> Array[meter]:
             return arr * t
 
-        v_arr: Array[meter] = Array(np.array([1.0, 2.0]))   # wrong dim
+        v_arr: Array[meter] = QuantityArray(np.array([1.0, 2.0]))   # wrong dim
         t_val: second = Quantity(2.0)
         func(v_arr, t_val)
     """)
@@ -388,24 +388,24 @@ def test_array_rejects_nonnumeric_dtype() -> None:
     import numpy as np
     import pytest
 
-    from mypy_units import Array
+    from mypy_units import QuantityArray
     with pytest.raises(TypeError, match="numeric"):
-        Array(np.array(["hello", "world"]))
+        QuantityArray(np.array(["hello", "world"]))
 
 
 def test_array_accepts_float64_dtype() -> None:
     import numpy as np
 
-    from mypy_units import Array
-    arr = Array(np.array([1.0, 2.0, 3.0]))
+    from mypy_units import QuantityArray
+    arr = QuantityArray(np.array([1.0, 2.0, 3.0]))
     assert arr.value.dtype == np.float64
 
 
 def test_array_accepts_integer_dtype() -> None:
     import numpy as np
 
-    from mypy_units import Array
-    arr = Array(np.array([1, 2, 3]))
+    from mypy_units import QuantityArray
+    arr = QuantityArray(np.array([1, 2, 3]))
     assert np.issubdtype(arr.value.dtype, np.integer)
 
 
