@@ -198,10 +198,10 @@ def _callee_callable(
 # QuantityArray (matching numpy broadcasting semantics).
 # ---------------------------------------------------------------------------
 
-def _get_cf_value(node: object) -> float | None:
-    """Extract the scalar from a ``ConversionFactor(x)`` AST call node.
+def _get_scalefactor_value(node: object) -> float | None:
+    """Extract the scalar from a ``ScaleFactor(x)`` AST call node.
 
-    Returns the numeric value when *node* is ``ConversionFactor(<literal>)``,
+    Returns the numeric value when *node* is ``ScaleFactor(<literal>)``,
     otherwise returns ``None``.  Both int and float literals are accepted;
     zero is rejected (undefined conversion).
     """
@@ -210,7 +210,7 @@ def _get_cf_value(node: object) -> float | None:
     callee = node.callee
     # Match by name; a fully-qualified check would be more robust but
     # NameExpr.fullname is not always resolved at hook call time.
-    if not isinstance(callee, NameExpr) or callee.name != "ConversionFactor":
+    if not isinstance(callee, NameExpr) or callee.name != "ScaleFactor":
         return None
     if not node.args:
         return None
@@ -224,17 +224,17 @@ def _get_cf_value(node: object) -> float | None:
     return None
 
 
-def _get_cf_scalar_from_op(ctx: MethodContext) -> float | None:
-    """Look for a ``ConversionFactor(x)`` call on either side of an OpExpr.
+def _get_scalefactor_from_op(ctx: MethodContext) -> float | None:
+    """Look for a ``ScaleFactor(x)`` call on either side of an OpExpr.
 
-    Handles ``quantity * ConversionFactor(k)`` (k on right),
-    ``ConversionFactor(k) * quantity`` via __rmul__ (k on left), and
-    ``quantity / ConversionFactor(k)`` (k on right).
+    Handles ``quantity * ScaleFactor(k)`` (k on right),
+    ``ScaleFactor(k) * quantity`` via __rmul__ (k on left), and
+    ``quantity / ScaleFactor(k)`` (k on right).
     """
     if not isinstance(ctx.context, OpExpr):
         return None
     for node in (ctx.context.left, ctx.context.right):
-        k = _get_cf_value(node)
+        k = _get_scalefactor_value(node)
         if k is not None:
             return k
     return None
@@ -272,21 +272,21 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
                     # Quantity × Quantity: standard dimensional multiplication.
                     result_q = self_q * other_q
                 else:
-                    # Quantity × ConversionFactor(k) or ConversionFactor(k) × Quantity.
+                    # Quantity × ScaleFactor(k) or ScaleFactor(k) × Quantity.
                     # Multiplying the VALUE by k converts to a k-times-smaller unit,
                     # preserving the physical quantity: (k·v) × (S/k) = v × S.
                     # Plain scalars (literals, variables) leave the unit unchanged.
-                    k = _get_cf_scalar_from_op(ctx)
+                    k = _get_scalefactor_from_op(ctx)
                     result_q = self_q / k if k is not None else self_q
             elif op == "/":
                 if other_q is not None:
                     # Quantity / Quantity: standard dimensional division.
                     result_q = self_q / other_q
                 else:
-                    # Quantity / ConversionFactor(k).
+                    # Quantity / ScaleFactor(k).
                     # Dividing the VALUE by k converts to a k-times-larger unit:
                     # (v/k) × (S·k) = v × S.
-                    k = _get_cf_scalar_from_op(ctx)
+                    k = _get_scalefactor_from_op(ctx)
                     result_q = self_q * k if k is not None else self_q
             elif op == "/r":
                 if other_q is not None:

@@ -70,9 +70,17 @@ ounce = Quantity[Literal["0.028349523125 kilogram"]]
 # ---------------------------------------------------------------------------
 # Temperature
 # ---------------------------------------------------------------------------
+# Note: Temperature units are defined in their native scales.
+# Conversions between them require both offset (Offset) and scale (ScaleFactor)
+# transformations. The type system tracks the scale, so:
+# - degC has scale 1 (relative to itself, same as Kelvin for differences)
+# - degF has scale 5/9 (since 1°F = 5/9°C in magnitude)
+# - kelvin has scale 1 (absolute temperature)
+# To convert °F → °C: subtract 32 (offset), then multiply by 5/9 (scale match)
+# To convert °C → °F: multiply by 9/5 (scale), then add 32 (offset)
 kelvin = Quantity[Literal["kelvin"]]
-degC = Quantity[Literal["kelvin"]]
-degF = Quantity[Literal["0.555555555555556 kelvin"]]
+degC = Quantity[Literal["kelvin"]]  # Same scale as Kelvin for differences
+degF = Quantity[Literal["0.555555555555556 kelvin"]]  # 1°F magnitude = 5/9 K magnitude
 
 # ---------------------------------------------------------------------------
 # Electric

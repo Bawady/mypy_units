@@ -502,41 +502,41 @@ def test_np_sqrt_direct_wrong(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 35. ConversionFactor: 3.6 * (m/s) → km/h — accepted
+# 35. ScaleFactor: 3.6 * (m/s) → km/h — accepted
 # ---------------------------------------------------------------------------
 def test_conversion_factor_mul_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def speed_in_kmh(d: meter, t: second) -> kilometer_per_hour:
-            return ConversionFactor(3.6) * d / t
+            return ScaleFactor(3.6) * d / t
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 36. ConversionFactor: wrong factor — return-value error
+# 36. ScaleFactor: wrong factor — return-value error
 # ---------------------------------------------------------------------------
 def test_conversion_factor_wrong_value(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def bad(d: meter, t: second) -> kilometer_per_hour:
-            return ConversionFactor(1) * d / t   # 1 m/s ≠ km/h scale
+            return ScaleFactor(1) * d / t   # 1 m/s ≠ km/h scale
     """)
     assert "error:" in out
     assert "return-value" in out or "Incompatible return value" in out
 
 
 # ---------------------------------------------------------------------------
-# 37. ConversionFactor: (second) / ConversionFactor(3600) → hour — accepted
+# 37. ScaleFactor: (second) / ScaleFactor(3600) → hour — accepted
 # ---------------------------------------------------------------------------
 def test_conversion_factor_div_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def travel_time_hours(d: meter, v: meter_per_second) -> hour:
-            return (d / v) / ConversionFactor(3600)
+            return (d / v) / ScaleFactor(3600)
     """)
     no_error(out)
 
 
 # ===========================================================================
-# ConversionFactor: comprehensive positive / negative test suite
+# ScaleFactor: comprehensive positive / negative test suite
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
@@ -569,7 +569,7 @@ def test_cf_missing_plain_float(mypy_fixture: Callable[[str], str]) -> None:
 def test_cf_necessary_wrong_value(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def speed_wrong(d: meter, t: second) -> kilometer_per_hour:
-            return ConversionFactor(2) * d / t   # 2 ≠ 3.6
+            return ScaleFactor(2) * d / t   # 2 ≠ 3.6
     """)
     assert "error:" in out
     assert "return-value" in out or "Incompatible return value" in out
@@ -581,7 +581,7 @@ def test_cf_necessary_wrong_value(mypy_fixture: Callable[[str], str]) -> None:
 def test_cf_unity_preserves_correct_type(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def speed(d: meter, t: second) -> meter_per_second:
-            return ConversionFactor(1) * d / t   # CF(1): scale / 1 = unchanged
+            return ScaleFactor(1) * d / t   # ScaleFactor(1): scale / 1 = unchanged
     """)
     no_error(out)
 
@@ -592,7 +592,7 @@ def test_cf_unity_preserves_correct_type(mypy_fixture: Callable[[str], str]) -> 
 def test_cf_unity_does_not_fix_wrong_scale(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def speed_wrong(d: meter, t: second) -> kilometer_per_hour:
-            return ConversionFactor(1) * d / t   # m/s ≠ km/h regardless of CF(1)
+            return ScaleFactor(1) * d / t   # m/s ≠ km/h regardless of CF(1)
     """)
     assert "error:" in out
     assert "return-value" in out or "Incompatible return value" in out
@@ -605,7 +605,7 @@ def test_cf_assignment_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         d: meter = Quantity(100.0)
         t: second = Quantity(50.0)
-        v: kilometer_per_hour = ConversionFactor(3.6) * d / t
+        v: kilometer_per_hour = ScaleFactor(3.6) * d / t
     """)
     no_error(out)
 
@@ -617,29 +617,29 @@ def test_cf_assignment_wrong_factor(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         d: meter = Quantity(100.0)
         t: second = Quantity(50.0)
-        v: kilometer_per_hour = ConversionFactor(2) * d / t   # 2 ≠ 3.6
+        v: kilometer_per_hour = ScaleFactor(2) * d / t   # 2 ≠ 3.6
     """)
     assert "error:" in out
 
 
 # ---------------------------------------------------------------------------
-# 45. Assign meter Quantity to kilometer via division by ConversionFactor(1000)
+# 45. Assign meter Quantity to kilometer via division by ScaleFactor(1000)
 # ---------------------------------------------------------------------------
 def test_cf_unit_reassign_div(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         d_m: meter = Quantity(1000.0)
-        d_km: kilometer = d_m / ConversionFactor(1000)
+        d_km: kilometer = d_m / ScaleFactor(1000)
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 46. Assign kilometer Quantity to meter via multiplication by ConversionFactor(1000)
+# 46. Assign kilometer Quantity to meter via multiplication by ScaleFactor(1000)
 # ---------------------------------------------------------------------------
 def test_cf_unit_reassign_mul(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         d_km: kilometer = Quantity(1.0)
-        d_m: meter = d_km * ConversionFactor(1000)
+        d_m: meter = d_km * ScaleFactor(1000)
     """)
     no_error(out)
 
@@ -650,6 +650,15 @@ def test_cf_unit_reassign_mul(mypy_fixture: Callable[[str], str]) -> None:
 def test_cf_unit_reassign_wrong_factor(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         d_m: meter = Quantity(1000.0)
-        d_km: kilometer = d_m / ConversionFactor(100)   # 100 ≠ 1000
+        d_km: kilometer = d_m / ScaleFactor(100)   # 100 ≠ 1000
     """)
     assert "error:" in out
+
+
+# ===========================================================================
+# ScaleFactor: offset conversions (temperature, etc.)
+# ===========================================================================
+
+
+
+

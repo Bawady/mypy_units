@@ -186,7 +186,8 @@ def _fmt_canonical(magnitude: float, units_str: str) -> str:
     """Format a (magnitude, units) pair into a canonical literal string."""
     if not units_str:
         units_str = "dimensionless"
-    if magnitude == 1.0:
+    # Use approximate comparison to handle floating point precision issues
+    if abs(magnitude - 1.0) < 1e-12:
         return units_str
     return f"{magnitude:.15g} {units_str}"
 

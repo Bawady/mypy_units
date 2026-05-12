@@ -1,42 +1,42 @@
-"""ConversionFactor — explicit unit-conversion wrapper for mypy_units.
+"""ScaleFactor — explicit multiplicative unit-conversion wrapper for mypy_units.
 
 Usage::
 
-    from mypy_units import ConversionFactor
+    from mypy_units import ScaleFactor
     from mypy_units.units import meter, second, kilometer_per_hour, hour
 
     def speed_in_kmh(d: meter, t: second) -> kilometer_per_hour:
-        return ConversionFactor(3.6) * d / t
+        return ScaleFactor(3.6) * d / t
 
     def travel_time_hours(d: meter, v: meter_per_second) -> hour:
-        return (d / v) / ConversionFactor(3600)
+        return (d / v) / ScaleFactor(3600)
 
 Semantics
 ---------
-At **runtime** ``ConversionFactor(x)`` is transparent: it multiplies or
+At **runtime** ``ScaleFactor(x)`` is transparent: it multiplies or
 divides the wrapped value by ``x``, producing the same numeric result as
 using the bare scalar.
 
-At **static analysis** time the mypy plugin treats a ``ConversionFactor(x)``
+At **static analysis** time the mypy plugin treats a ``ScaleFactor(x)``
 operand as a *unit-conversion factor*, applying the invariant
 ``physical = value × scale`` in both directions:
 
-* ``quantity[scale S] * ConversionFactor(k)``  →  scale becomes ``S / k``
-* ``quantity[scale S] / ConversionFactor(k)``  →  scale becomes ``S * k``
+    quantity[scale S] * ScaleFactor(k)  →  scale becomes S / k
+    quantity[scale S] / ScaleFactor(k)  →  scale becomes S * k
 
 Plain scalars (bare float/int literals or variables) do **not** affect the
-inferred unit type; only ``ConversionFactor``-wrapped values do.
+inferred unit type; only ``ScaleFactor``-wrapped values do.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
 
-class ConversionFactor:
-    """Signals unit-conversion intent to the mypy_units plugin.
+class ScaleFactor:
+    """Signals multiplicative unit-conversion intent to the mypy_units plugin.
 
-    Wrap the conversion factor in ``ConversionFactor(x)`` to let the plugin
-    track the resulting unit type through the arithmetic expression.
+    Wrap a scale factor in ``ScaleFactor(x)`` to let the plugin track
+    multiplicative unit conversions (e.g., m ↔ km, m/s ↔ km/h).
     """
 
     __slots__ = ("value",)
@@ -45,7 +45,7 @@ class ConversionFactor:
         self.value = float(value)
 
     def __repr__(self) -> str:
-        return f"ConversionFactor({self.value!r})"
+        return f"ScaleFactor({self.value!r})"
 
     # ------------------------------------------------------------------
     # Runtime arithmetic — behave like the bare scalar value.
