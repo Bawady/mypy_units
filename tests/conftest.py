@@ -19,7 +19,7 @@ PREAMBLE = """\
 from __future__ import annotations
 import numpy as np
 from typing import Literal
-from mypy_units import Quantity, Array, ScaleFactor, scalar, array
+from mypy_units import Array, Quantity, QuantityArray, ScaleFactor, Scalar
 from mypy_units.units import (
     meter, kilometer, second, kilogram, radian,
     hour, kilometer_per_hour,

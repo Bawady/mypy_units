@@ -5,7 +5,13 @@ from fractions import Fraction
 from typing import Any
 
 from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, NameExpr, OpExpr
-from mypy.plugin import AnalyzeTypeContext, FunctionContext, FunctionSigContext, MethodContext, Plugin
+from mypy.plugin import (
+    AnalyzeTypeContext,
+    FunctionContext,
+    FunctionSigContext,
+    MethodContext,
+    Plugin,
+)
 from mypy.types import (
     AnyType,
     CallableType,
@@ -557,16 +563,16 @@ _NUMPY_UFUNC_HOOKS: dict[str, Callable[[MethodContext], Type]] = {
 
 
 # ---------------------------------------------------------------------------
-# scalar["..."] / array["..."] type analysis hooks
+# Scalar["..."] / Array["..."] type analysis hooks
 # ---------------------------------------------------------------------------
 
-_SCALAR_FULLNAME = "mypy_units.unit_expr.scalar"
-_ARRAY_EXPR_FULLNAME = "mypy_units.unit_expr.array"
+_SCALAR_FULLNAME = "mypy_units.unit_expr.Scalar"
+_ARRAY_EXPR_FULLNAME = "mypy_units.unit_expr.Array"
 
 
 def _make_unit_expr_hook(is_array: bool) -> Callable[[AnalyzeTypeContext], Type]:
     def hook(ctx: AnalyzeTypeContext) -> Type:
-        name = "array" if is_array else "scalar"
+        name = "Array" if is_array else "Scalar"
         if not ctx.type.args:
             ctx.api.fail(f'{name}[] requires a string argument, e.g. {name}["km/h"]', ctx.context)
             return AnyType(TypeOfAny.from_error)

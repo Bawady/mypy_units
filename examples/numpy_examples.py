@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from mypy_units import Array, Quantity
+from mypy_units import Array, Quantity, QuantityArray
 from mypy_units.units import (
     kilogram,
     meter,
@@ -76,13 +76,13 @@ print(f"pressure: {p.value} Pa,  force: {f.value} N")
 # Array demo
 # ---------------------------------------------------------------------------
 
-d_arr: Array[meter] = Array(np.array([10.0, 20.0, 30.0]))
-t_arr: Array[second] = Array(np.array([2.0, 4.0, 5.0]))
+d_arr: Array[meter] = QuantityArray(np.array([10.0, 20.0, 30.0]))
+t_arr: Array[second] = QuantityArray(np.array([2.0, 4.0, 5.0]))
 print(f"array speeds:  {speed_arr(d_arr, t_arr).value}")
 print(f"array accels:  {accel2_arr(d_arr, t_arr).value}")
 
 # sqrt: recover Array[meter] from Array[square_meter]
-area_arr: Array[square_meter] = Array(np.array([4.0, 9.0, 16.0]))
+area_arr: Array[square_meter] = QuantityArray(np.array([4.0, 9.0, 16.0]))
 side_arr: Array[meter] = np.sqrt(area_arr)
 print(f"side lengths:  {side_arr.value}")
 

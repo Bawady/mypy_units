@@ -661,15 +661,15 @@ def test_cf_unit_reassign_wrong_factor(mypy_fixture: Callable[[str], str]) -> No
 
 
 # ===========================================================================
-# scalar["..."] and array["..."] expression tests
+# Scalar["..."] and Array["..."] expression tests
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# 48. scalar["meter"] as annotation — same as meter, should pass
+# 48. Scalar["meter"] as annotation — same as meter, should pass
 # ---------------------------------------------------------------------------
 def test_scalar_simple_annotation(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def travel(d: scalar["meter"]) -> float: ...
+        def travel(d: Scalar["meter"]) -> float: ...
 
         x: meter
         travel(x)
@@ -678,33 +678,33 @@ def test_scalar_simple_annotation(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 49. scalar["km/h"] as return type of d/t with d: kilometer, t: hour — pass
+# 49. Scalar["km/h"] as return type of d/t with d: kilometer, t: hour — pass
 # ---------------------------------------------------------------------------
 def test_scalar_compound_return_correct(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def speed(d: kilometer, t: hour) -> scalar[Literal["km/h"]]:
+        def speed(d: kilometer, t: hour) -> Scalar[Literal["km/h"]]:
             return d / t
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 49b. scalar["kilometer_per_hour"] — underscore alias also works
+# 49b. Scalar["kilometer_per_hour"] — underscore alias also works
 # ---------------------------------------------------------------------------
 def test_scalar_compound_underscore_name(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def speed(d: kilometer, t: hour) -> scalar["kilometer_per_hour"]:
+        def speed(d: kilometer, t: hour) -> Scalar["kilometer_per_hour"]:
             return d / t
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 50. scalar[Literal["km/h"]] as return type with wrong scale — fail
+# 50. Scalar[Literal["km/h"]] as return type with wrong scale — fail
 # ---------------------------------------------------------------------------
 def test_scalar_compound_return_wrong_scale(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def speed(d: meter, t: second) -> scalar[Literal["km/h"]]:
+        def speed(d: meter, t: second) -> Scalar[Literal["km/h"]]:
             return d / t  # m/s ≠ km/h scale
     """)
     assert "error:" in out
@@ -712,22 +712,26 @@ def test_scalar_compound_return_wrong_scale(mypy_fixture: Callable[[str], str]) 
 
 
 # ---------------------------------------------------------------------------
-# 51. scalar[Literal["m/s**2"]] as return type of F/m with newton-equivalent F
+# 51. Scalar[Literal["m/s**2"]] as return type of F/m with newton-equivalent F
 # ---------------------------------------------------------------------------
 def test_scalar_power_expression(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def accel(F: scalar[Literal["kg*m/s**2"]], m: kilogram) -> scalar[Literal["m/s**2"]]:
+        def accel(
+            F: Scalar[Literal["kg*m/s**2"]], m: kilogram
+        ) -> Scalar[Literal["m/s**2"]]:
             return F / m
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 52. scalar[Literal["kg*m/s**2"]] as return type of m*a
+# 52. Scalar[Literal["kg*m/s**2"]] as return type of m*a
 # ---------------------------------------------------------------------------
 def test_scalar_nested_expression(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def force(m: kilogram, a: scalar[Literal["m/s**2"]]) -> scalar[Literal["kg*m/s**2"]]:
+        def force(
+            m: kilogram, a: Scalar[Literal["m/s**2"]]
+        ) -> Scalar[Literal["kg*m/s**2"]]:
             return m * a
     """)
     no_error(out)
@@ -738,7 +742,7 @@ def test_scalar_nested_expression(mypy_fixture: Callable[[str], str]) -> None:
 # ---------------------------------------------------------------------------
 def test_scalar_module_alias(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        kmh = scalar[Literal["km/h"]]
+        kmh = Scalar[Literal["km/h"]]
 
         def speed(d: kilometer, t: hour) -> kmh:
             return d / t
@@ -747,11 +751,11 @@ def test_scalar_module_alias(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 54. scalar[Literal["km/h"]] where actual return is m/s — fail
+# 54. Scalar[Literal["km/h"]] where actual return is m/s — fail
 # ---------------------------------------------------------------------------
 def test_scalar_wrong_scale(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def speed(d: meter, t: second) -> scalar[Literal["km/h"]]:
+        def speed(d: meter, t: second) -> Scalar[Literal["km/h"]]:
             return d / t  # returns m/s, not km/h
     """)
     assert "error:" in out
@@ -759,22 +763,22 @@ def test_scalar_wrong_scale(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 55. ScaleFactor works inside a scalar[Literal["..."]]-annotated function body
+# 55. ScaleFactor works inside a Scalar[Literal["..."]]-annotated function body
 # ---------------------------------------------------------------------------
 def test_scalar_with_scalefactor(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def speed_in_kmh(d: meter, t: second) -> scalar[Literal["km/h"]]:
+        def speed_in_kmh(d: meter, t: second) -> Scalar[Literal["km/h"]]:
             return ScaleFactor(3.6) * d / t
     """)
     no_error(out)
 
 
 # ---------------------------------------------------------------------------
-# 56. array["m/s"] as annotation — should pass
+# 56. Array["m/s"] as annotation — should pass
 # ---------------------------------------------------------------------------
 def test_array_simple_annotation(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def travel(d: array["meter"]) -> float: ...
+        def travel(d: Array["meter"]) -> float: ...
 
         x: Array[meter]
         travel(x)
@@ -783,11 +787,11 @@ def test_array_simple_annotation(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 57. scalar where array expected — type error
+# 57. Scalar where Array expected — type error
 # ---------------------------------------------------------------------------
 def test_scalar_where_array_expected(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def travel(d: array["meter"]) -> float: ...
+        def travel(d: Array["meter"]) -> float: ...
 
         x: meter
         travel(x)
@@ -796,11 +800,11 @@ def test_scalar_where_array_expected(mypy_fixture: Callable[[str], str]) -> None
 
 
 # ---------------------------------------------------------------------------
-# 58. array where scalar expected — type error
+# 58. Array where Scalar expected — type error
 # ---------------------------------------------------------------------------
 def test_array_where_scalar_expected(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def travel(d: scalar["meter"]) -> float: ...
+        def travel(d: Scalar["meter"]) -> float: ...
 
         x: Array[meter]
         travel(x)
@@ -813,7 +817,7 @@ def test_array_where_scalar_expected(mypy_fixture: Callable[[str], str]) -> None
 # ---------------------------------------------------------------------------
 def test_invalid_pint_string(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
-        def travel(d: scalar["invalid_unit_xyz"]) -> float: ...
+        def travel(d: Scalar["invalid_unit_xyz"]) -> float: ...
 
         x: meter
         travel(x)

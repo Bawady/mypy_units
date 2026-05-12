@@ -32,7 +32,7 @@ The string annotation approach is recommended because:
 """
 from __future__ import annotations
 
-from typing import Any, Literal, Type
+from typing import Any, Literal
 
 from mypy_units.dimension import to_base_literal
 from mypy_units.quantity import Quantity
@@ -49,19 +49,19 @@ class _UnitType:
     def __init__(self, name: str) -> None:
         object.__setattr__(self, "_name", name)
     
-    def __mul__(self, other: _UnitType) -> Type[Any]:
+    def __mul__(self, other: _UnitType) -> type[Any]:
         u1 = object.__getattribute__(self, "_name")
         u2 = object.__getattribute__(other, "_name") if isinstance(other, _UnitType) else str(other)
         canonical = to_base_literal(f"{u1} * {u2}")
         return Quantity[Literal[canonical]]  # type: ignore[valid-type, return-value]
     
-    def __truediv__(self, other: _UnitType) -> Type[Any]:
+    def __truediv__(self, other: _UnitType) -> type[Any]:
         u1 = object.__getattribute__(self, "_name")
         u2 = object.__getattribute__(other, "_name") if isinstance(other, _UnitType) else str(other)
         canonical = to_base_literal(f"{u1} / {u2}")
         return Quantity[Literal[canonical]]  # type: ignore[valid-type, return-value]
     
-    def __pow__(self, exp: int) -> Type[Any]:
+    def __pow__(self, exp: int) -> type[Any]:
         u1 = object.__getattribute__(self, "_name")
         if exp == 0:
             return Quantity[Literal["dimensionless"]]  # type: ignore[valid-type, return-value]
@@ -99,7 +99,7 @@ rad = radian
 Hz = hertz
 
 
-def Unit(unit_str: str) -> Type[Any]:
+def unit(unit_str: str) -> type[Any]:  # noqa: N802
     """Create a Quantity type from a Pint unit string.
     
     This is a runtime helper. For type annotations, prefer using
