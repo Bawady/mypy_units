@@ -53,6 +53,7 @@ jobs:
   test-pintrs:
     name: "pintrs / py${{ matrix.python-version }} / ${{ matrix.os }}"
     runs-on: ${{ matrix.os }}
+    needs: test-pint
 
     strategy:
       fail-fast: false
@@ -84,5 +85,5 @@ jobs:
         run: uv sync --extra test --extra pintrs
 
       - name: Testcases (pintrs backend)
-        run: uv run pytest --tb=short -q --cov=mypy_units --cov-report=term-missing
+        run: uv run pytest --tb=short -q --cov=mypy_units --cov-report=term-missing --cov-append
 
