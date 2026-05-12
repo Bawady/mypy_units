@@ -5,7 +5,7 @@ from fractions import Fraction
 from typing import Any
 
 from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, NameExpr, OpExpr
-from mypy.plugin import FunctionContext, FunctionSigContext, MethodContext, Plugin
+from mypy.plugin import AnalyzeTypeContext, FunctionContext, FunctionSigContext, MethodContext, Plugin
 from mypy.types import (
     AnyType,
     CallableType,
@@ -13,6 +13,7 @@ from mypy.types import (
     LiteralType,
     Type,
     TypeOfAny,
+    UnboundType,
     get_proper_type,
 )
 
@@ -20,6 +21,7 @@ from mypy_units.dimension import (
     dims_equal,
     parse_base_literal,
     resolve,
+    to_base_literal,
 )
 
 _NUMPY_MOD = "mypy_units.numpy"
@@ -555,10 +557,78 @@ _NUMPY_UFUNC_HOOKS: dict[str, Callable[[MethodContext], Type]] = {
 
 
 # ---------------------------------------------------------------------------
+# scalar["..."] / array["..."] type analysis hooks
+# ---------------------------------------------------------------------------
+
+_SCALAR_FULLNAME = "mypy_units.unit_expr.scalar"
+_ARRAY_EXPR_FULLNAME = "mypy_units.unit_expr.array"
+
+
+def _make_unit_expr_hook(is_array: bool) -> Callable[[AnalyzeTypeContext], Type]:
+    def hook(ctx: AnalyzeTypeContext) -> Type:
+        name = "array" if is_array else "scalar"
+        if not ctx.type.args:
+            ctx.api.fail(f'{name}[] requires a string argument, e.g. {name}["km/h"]', ctx.context)
+            return AnyType(TypeOfAny.from_error)
+
+        arg = ctx.type.args[0]
+        # Simple identifier strings (e.g. "meter", "kilometer_per_hour") arrive as
+        # UnboundType(name="<str>") — mypy treats string annotations as forward refs.
+        # Compound pint expressions like "km/h" cannot be used directly because mypy
+        # parses the content as arithmetic and loses the string.  Use Literal["km/h"]
+        # instead; mypy keeps Literal[...] as UnboundType("Literal", args=[...]) which
+        # we analyze here to extract the string value.
+        if isinstance(arg, UnboundType) and arg.name == "Literal":
+            analyzed = get_proper_type(ctx.api.analyze_type(arg))
+            if not (isinstance(analyzed, LiteralType) and isinstance(analyzed.value, str)):
+                ctx.api.fail(
+                    f'{name}[Literal[...]] requires a string literal, e.g. {name}[Literal["km/h"]]',
+                    ctx.context,
+                )
+                return AnyType(TypeOfAny.from_error)
+            unit_str = analyzed.value
+        elif isinstance(arg, UnboundType):
+            unit_str = arg.name
+        elif isinstance(arg, LiteralType) and isinstance(arg.value, str):
+            unit_str = arg.value
+        else:
+            ctx.api.fail(
+                f'{name}[] requires a string argument. '
+                f'Simple names: {name}["meter"]. Compound expressions: {name}[Literal["km/h"]].',
+                ctx.context,
+            )
+            return AnyType(TypeOfAny.from_error)
+        try:
+            canonical = to_base_literal(unit_str)
+        except Exception:
+            ctx.api.fail(f'Unknown unit expression: {unit_str!r}', ctx.context)
+            return AnyType(TypeOfAny.from_error)
+
+        str_type = ctx.api.named_type("builtins.str", [])
+        lit = LiteralType(value=canonical, fallback=str_type)
+        qty = ctx.api.named_type(_QUANTITY_FULLNAME, [lit])
+
+        if not is_array:
+            return qty
+        return ctx.api.named_type(_ARRAY_FULLNAME, [qty])
+
+    return hook
+
+
+# ---------------------------------------------------------------------------
 # Plugin
 # ---------------------------------------------------------------------------
 
 class PintUnitsPlugin(Plugin):
+    def get_type_analyze_hook(
+        self, fullname: str
+    ) -> Callable[[AnalyzeTypeContext], Type] | None:
+        if fullname == _SCALAR_FULLNAME:
+            return _make_unit_expr_hook(is_array=False)
+        if fullname == _ARRAY_EXPR_FULLNAME:
+            return _make_unit_expr_hook(is_array=True)
+        return None
+
     def get_function_signature_hook(
         self, fullname: str
     ) -> Callable[[FunctionSigContext], CallableType] | None:
