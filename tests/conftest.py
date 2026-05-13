@@ -8,7 +8,7 @@ import pytest
 
 PLUGIN_CONFIG = """\
 [mypy]
-python_version = 3.10
+python_version = 3.11
 plugins = mypy_units.plugin
 
 [mypy-pintrs]

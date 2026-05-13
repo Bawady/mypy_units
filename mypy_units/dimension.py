@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import functools
 import re
+import tomllib
 from fractions import Fraction
+from pathlib import Path
 from typing import Any
 
 try:
@@ -13,10 +15,41 @@ except ImportError:
 _ureg: pint.UnitRegistry | None = None
 
 
+def _find_pyproject_toml() -> Path | None:
+    path = Path.cwd()
+    while True:
+        candidate = path / "pyproject.toml"
+        if candidate.exists():
+            return candidate
+        parent = path.parent
+        if parent == path:
+            return None
+        path = parent
+
+
+def _load_user_units(ureg: pint.UnitRegistry) -> None:
+    """Call ureg.define() for each entry in [tool.mypy_units] define = [...]."""
+    toml_path = _find_pyproject_toml()
+    if toml_path is None:
+        return
+    try:
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return
+    definitions = data.get("tool", {}).get("mypy_units", {}).get("define", [])
+    if not isinstance(definitions, list):
+        return
+    for defn in definitions:
+        if isinstance(defn, str):
+            ureg.define(defn)
+
+
 def _registry() -> pint.UnitRegistry:
     global _ureg
     if _ureg is None:
         _ureg = pint.UnitRegistry()
+        _load_user_units(_ureg)
     return _ureg
 
 
