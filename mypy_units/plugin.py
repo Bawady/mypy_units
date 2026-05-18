@@ -24,7 +24,7 @@ from mypy.types import (
 )
 
 from mypy_units.dimension import (
-    dims_equal,
+    _fmt_canonical,
     parse_base_literal,
     resolve,
     to_base_literal,
@@ -36,6 +36,8 @@ _QUANTITY_FULLNAME = "mypy_units.quantity.Quantity"
 _ARRAY_FULLNAME = "mypy_units.array_quantity.QuantityArray"
 
 _PLAIN_NUMERIC = {"builtins.float", "builtins.int", "builtins.complex"}
+
+_SCALE_EPSILON = 1e-6
 
 
 # ---------------------------------------------------------------------------
@@ -80,13 +82,8 @@ def _is_escape_hatch(tp: Type) -> bool:
 
 
 def _canonical(q: Any) -> str:
-    """Convert a pint Quantity to a canonical base-unit literal string."""
     b = q.to_base_units()
-    mag = float(b.magnitude)
-    units_str = str(b.units)
-    if not units_str:
-        units_str = "dimensionless"
-    return units_str if mag == 1.0 else f"{mag:.15g} {units_str}"
+    return _fmt_canonical(float(b.magnitude), str(b.units))
 
 
 # ---------------------------------------------------------------------------
@@ -154,17 +151,27 @@ def _check_call(
         if actual_str is None:
             continue
 
-        expected_dim = resolve(expected_str)
-        actual_dim = resolve(actual_str)
+        label = param_name if param_name else str(i)
 
-        if expected_dim is None or actual_dim is None:
+        try:
+            q_expected = parse_base_literal(expected_str)
+            q_actual = parse_base_literal(actual_str)
+            ratio = (q_actual / q_expected).to_base_units()
+        except Exception:
             continue
 
-        if not dims_equal(expected_dim, actual_dim):
-            label = param_name if param_name else str(i)
+        if ratio.dimensionality:
+            expected_dim = resolve(expected_str)
+            actual_dim = resolve(actual_str)
             ctx.api.fail(
                 f"Dimension mismatch for argument '{label}': "
                 f"expected {expected_dim}, got {actual_dim}",
+                ctx.context,
+            )
+        elif abs(float(ratio.magnitude) - 1.0) > _SCALE_EPSILON:
+            ctx.api.fail(
+                f"Unit mismatch for argument '{label}': "
+                f"expected {expected_str!r}, got {actual_str!r}",
                 ctx.context,
             )
 

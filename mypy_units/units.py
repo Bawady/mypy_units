@@ -22,17 +22,17 @@ from mypy_units.quantity import Quantity
 # ---------------------------------------------------------------------------
 meter = Quantity[Literal["meter"]]
 kilometer = Quantity[Literal["1000 meter"]]
-centimeter = Quantity[Literal["0.01 meter"]]
-millimeter = Quantity[Literal["0.001 meter"]]
-micrometer = Quantity[Literal["1e-06 meter"]]
-nanometer = Quantity[Literal["1e-09 meter"]]
-mile = Quantity[Literal["1609.344 meter"]]
-yard = Quantity[Literal["0.9144 meter"]]
+centimeter = Quantity[Literal["1/100 meter"]]
+millimeter = Quantity[Literal["1/1000 meter"]]
+micrometer = Quantity[Literal["1/1000000 meter"]]
+nanometer = Quantity[Literal["1/1000000000 meter"]]
+mile = Quantity[Literal["201168/125 meter"]]
+yard = Quantity[Literal["1143/1250 meter"]]
 foot = Quantity[Literal["0.3048 meter"]]
-inch = Quantity[Literal["0.0254 meter"]]
+inch = Quantity[Literal["127/5000 meter"]]
 nautical_mile = Quantity[Literal["1852 meter"]]
 angstrom = Quantity[Literal["1e-10 meter"]]
-light_year = Quantity[Literal["9.4607304725808e+15 meter"]]
+light_year = Quantity[Literal["9460730472580800 meter"]]
 
 # ---------------------------------------------------------------------------
 # Area / volume
@@ -47,9 +47,9 @@ milliliter = Quantity[Literal["1e-06 meter ** 3"]]
 # Time
 # ---------------------------------------------------------------------------
 second = Quantity[Literal["second"]]
-millisecond = Quantity[Literal["0.001 second"]]
-microsecond = Quantity[Literal["1e-06 second"]]
-nanosecond = Quantity[Literal["1e-09 second"]]
+millisecond = Quantity[Literal["1/1000 second"]]
+microsecond = Quantity[Literal["1/1000000 second"]]
+nanosecond = Quantity[Literal["1/1000000000 second"]]
 minute = Quantity[Literal["60 second"]]
 hour = Quantity[Literal["3600 second"]]
 day = Quantity[Literal["86400 second"]]
@@ -60,9 +60,9 @@ year = Quantity[Literal["31557600 second"]]
 # Mass
 # ---------------------------------------------------------------------------
 kilogram = Quantity[Literal["kilogram"]]
-gram = Quantity[Literal["0.001 kilogram"]]
-milligram = Quantity[Literal["1e-06 kilogram"]]
-microgram = Quantity[Literal["1e-09 kilogram"]]
+gram = Quantity[Literal["1/1000 kilogram"]]
+milligram = Quantity[Literal["1/1000000 kilogram"]]
+microgram = Quantity[Literal["1/1000000000 kilogram"]]
 tonne = Quantity[Literal["1000 kilogram"]]
 pound = Quantity[Literal["0.45359237 kilogram"]]
 ounce = Quantity[Literal["0.028349523125 kilogram"]]
@@ -80,15 +80,15 @@ ounce = Quantity[Literal["0.028349523125 kilogram"]]
 # To convert °C → °F: multiply by 9/5 (scale), then add 32 (offset)
 kelvin = Quantity[Literal["kelvin"]]
 degC = Quantity[Literal["kelvin"]]  # Same scale as Kelvin for differences
-degF = Quantity[Literal["0.555555555555556 kelvin"]]  # 1°F magnitude = 5/9 K magnitude
+degF = Quantity[Literal["5/9 kelvin"]]  # 1°F magnitude = 5/9 K magnitude
 
 # ---------------------------------------------------------------------------
 # Electric
 # ---------------------------------------------------------------------------
 ampere = Quantity[Literal["ampere"]]
-milliampere = Quantity[Literal["0.001 ampere"]]
+milliampere = Quantity[Literal["1/1000 ampere"]]
 volt = Quantity[Literal["kilogram * meter ** 2 / ampere / second ** 3"]]
-millivolt = Quantity[Literal["0.001 kilogram * meter ** 2 / ampere / second ** 3"]]
+millivolt = Quantity[Literal["1/1000 kilogram * meter ** 2 / ampere / second ** 3"]]
 kilovolt = Quantity[Literal["1000 kilogram * meter ** 2 / ampere / second ** 3"]]
 ohm = Quantity[Literal["kilogram * meter ** 2 / ampere ** 2 / second ** 3"]]
 siemens = Quantity[Literal["ampere ** 2 * second ** 3 / kilogram / meter ** 2"]]
@@ -101,7 +101,7 @@ weber = Quantity[Literal["kilogram * meter ** 2 / ampere / second ** 2"]]
 # Amount of substance / luminosity
 # ---------------------------------------------------------------------------
 mole = Quantity[Literal["mole"]]
-millimole = Quantity[Literal["0.001 mole"]]
+millimole = Quantity[Literal["1/1000 mole"]]
 candela = Quantity[Literal["candela"]]
 
 # ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ candela = Quantity[Literal["candela"]]
 # ---------------------------------------------------------------------------
 newton = Quantity[Literal["kilogram * meter / second ** 2"]]
 kilonewton = Quantity[Literal["1000 kilogram * meter / second ** 2"]]
-dyne = Quantity[Literal["1e-05 kilogram * meter / second ** 2"]]
+dyne = Quantity[Literal["1/100000 kilogram * meter / second ** 2"]]
 pascal = Quantity[Literal["kilogram / meter / second ** 2"]]
 kilopascal = Quantity[Literal["1000 kilogram / meter / second ** 2"]]
 megapascal = Quantity[Literal["1000000 kilogram / meter / second ** 2"]]
@@ -123,7 +123,7 @@ atmosphere = Quantity[Literal["101325 kilogram / meter / second ** 2"]]
 joule = Quantity[Literal["kilogram * meter ** 2 / second ** 2"]]
 kilojoule = Quantity[Literal["1000 kilogram * meter ** 2 / second ** 2"]]
 megajoule = Quantity[Literal["1000000 kilogram * meter ** 2 / second ** 2"]]
-calorie = Quantity[Literal["4.184 kilogram * meter ** 2 / second ** 2"]]
+calorie = Quantity[Literal["523/125 kilogram * meter ** 2 / second ** 2"]]
 kilocalorie = Quantity[Literal["4184 kilogram * meter ** 2 / second ** 2"]]
 electronvolt = Quantity[Literal["1.602176634e-19 kilogram * meter ** 2 / second ** 2"]]
 watt = Quantity[Literal["kilogram * meter ** 2 / second ** 3"]]
@@ -142,7 +142,7 @@ gigahertz = Quantity[Literal["1000000000 1 / second"]]
 # Kinematics
 # ---------------------------------------------------------------------------
 meter_per_second = Quantity[Literal["meter / second"]]
-kilometer_per_hour = Quantity[Literal["0.277777777777778 meter / second"]]
+kilometer_per_hour = Quantity[Literal["5/18 meter / second"]]
 meter_per_second_squared = Quantity[Literal["meter / second ** 2"]]
 
 # ---------------------------------------------------------------------------

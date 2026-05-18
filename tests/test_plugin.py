@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 def no_error(output: str) -> None:
     assert "Dimension mismatch" not in output, f"Unexpected error:\n{output}"
+    assert "Unit mismatch" not in output, f"Unexpected error:\n{output}"
     unexpected = [
         line for line in output.splitlines()
         if "error:" in line and "[empty-body]" not in line
@@ -14,22 +15,37 @@ def no_error(output: str) -> None:
 
 
 def has_mismatch(output: str, arg: str | None = None) -> None:
-    assert "Dimension mismatch" in output, f"Expected dimension mismatch, got:\n{output}"
+    assert "Dimension mismatch" in output or "Unit mismatch" in output, (
+        f"Expected dimension or unit mismatch, got:\n{output}"
+    )
     if arg:
         assert arg in output, f"Expected mismatch on '{arg}', got:\n{output}"
 
 
 # ---------------------------------------------------------------------------
-# 1. Unit→Unit same dimension (kilometer passed where meter expected)
+# 1. Unit→Unit same unit — exact match passes
 # ---------------------------------------------------------------------------
-def test_unit_to_unit_same_dim(mypy_fixture: Callable[[str], str]) -> None:
+def test_unit_to_unit_exact_match(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def travel(d: meter) -> float: ...
+
+        x: meter
+        travel(x)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 1b. Unit→Unit same dimension but different scale — flagged as unit mismatch
+# ---------------------------------------------------------------------------
+def test_unit_to_unit_scale_mismatch(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def travel(d: meter) -> float: ...
 
         x: kilometer
         travel(x)
     """)
-    no_error(out)
+    has_mismatch(out, "d")
 
 
 # ---------------------------------------------------------------------------
@@ -59,9 +75,9 @@ def test_compound_unit_arithmetic_correct(mypy_fixture: Callable[[str], str]) ->
 
 
 # ---------------------------------------------------------------------------
-# 4. Multiple unit aliases of the same dimension are all interchangeable
+# 4. Same dimension, different scale — all three rejected
 # ---------------------------------------------------------------------------
-def test_same_dim_units_interchangeable(mypy_fixture: Callable[[str], str]) -> None:
+def test_same_dim_different_scale_rejected(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         from mypy_units.units import centimeter, millimeter
 
@@ -74,7 +90,9 @@ def test_same_dim_units_interchangeable(mypy_fixture: Callable[[str], str]) -> N
         go(b)
         go(c)
     """)
-    no_error(out)
+    assert out.count("Unit mismatch") == 3, (
+        f"Expected 3 unit-mismatch errors (km, cm, mm), got:\n{out}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -107,19 +125,19 @@ def test_plain_float_escape_hatch(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. Multi-parameter function — error only on wrong argument
+# 7. Multi-parameter function — scale mismatch and dimension mismatch both caught
 # ---------------------------------------------------------------------------
-def test_multi_param_partial_error(mypy_fixture: Callable[[str], str]) -> None:
+def test_multi_param_both_errors(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def speed(distance: meter, time: second) -> float: ...
 
-        d: kilometer    # [length] ✓
-        t: kilogram     # [mass]   ✗
+        d: kilometer    # same dimension, wrong scale
+        t: kilogram     # wrong dimension entirely
 
         speed(d, t)
     """)
+    has_mismatch(out, "distance")
     has_mismatch(out, "time")
-    assert "distance" not in out, f"False positive on 'distance':\n{out}"
 
 
 # ---------------------------------------------------------------------------
@@ -137,9 +155,9 @@ def test_invalid_unit_string(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 9. Dimensionless: radian and degree are interchangeable
+# 9. Dimensionless: degree has a different scale than radian — flagged
 # ---------------------------------------------------------------------------
-def test_dimensionless(mypy_fixture: Callable[[str], str]) -> None:
+def test_dimensionless_scale_mismatch(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         from mypy_units.units import degree
 
@@ -148,7 +166,7 @@ def test_dimensionless(mypy_fixture: Callable[[str], str]) -> None:
         d: degree
         rotate(d)
     """)
-    no_error(out)
+    has_mismatch(out, "angle")
 
 
 # ---------------------------------------------------------------------------
@@ -323,16 +341,16 @@ def test_array_to_scalar_param_rejected(mypy_fixture: Callable[[str], str]) -> N
 
 
 # ---------------------------------------------------------------------------
-# 31. Array with same-dimension alias — interchangeable (like scalars)
+# 31. Array with same-dimension but different scale — rejected
 # ---------------------------------------------------------------------------
-def test_array_same_dim_interchangeable(mypy_fixture: Callable[[str], str]) -> None:
+def test_array_different_scale_rejected(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def func(d: Array[meter]) -> float: ...
 
         d_km: Array[kilometer] = QuantityArray(np.array([1.0, 2.0]))
         func(d_km)
     """)
-    no_error(out)
+    has_mismatch(out, "d")
 
 
 # ---------------------------------------------------------------------------

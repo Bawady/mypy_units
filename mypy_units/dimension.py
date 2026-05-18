@@ -211,15 +211,55 @@ _UNIT_MAP: dict[str, str] = {
     # Offset temperature units: map to Kelvin-scale equivalents so that
     # only the multiplicative scale factor is used (no offset arithmetic).
     "degC": "K",
-    "degF": "0.5555555555555556 K",
+    "degF": "5/9 K",
 }
+
+# Largest denominator to try when converting a float magnitude to a fraction.
+# 10**9 covers everything down to nanometres (1/10^9 m) exactly.
+_FRAC_LIMIT = 10**9
+
+# Matches an optional rational coefficient at the start of a canonical string:
+#   "5/18 meter / second"  →  num=5, den=18, rest="meter / second"
+#   "1000 meter"           →  num=1000, den=None, rest="meter"
+#   "-1 meter"             →  num=-1, den=None, rest="meter"
+# No match for bare unit strings like "meter" or "dimensionless".
+_CANON_COEFF: re.Pattern[str] = re.compile(r"^(-?\d+)(?:/(\d+))? +(.*)", re.DOTALL)
+
+
+def _is_5smooth(n: int) -> bool:
+    """Return True if every prime factor of *n* is in {2, 3, 5}.
+
+    Used to distinguish "nice" canonical fractions (1/1000, 5/18, 5/9, …) from
+    irreducible fractions that arise when limit_denominator fits an irrational
+    or noisy float (e.g. π/180, the pound in kg from pint's internal rounding).
+    """
+    n = abs(n)
+    for p in (2, 3, 5):
+        while n % p == 0:
+            n //= p
+    return n == 1
 
 
 def _fmt_canonical(magnitude: float, units_str: str) -> str:
-    """Format a (magnitude, units) pair into a canonical literal string."""
+    """Format a (magnitude, units) pair into a canonical literal string.
+
+    Converts the magnitude to a rational fraction when the fraction produced by
+    ``Fraction(magnitude).limit_denominator(_FRAC_LIMIT)`` round-trips back to
+    the exact same float *and* its denominator is 5-smooth (factors only in
+    {2, 3, 5}).  This covers powers of 10, 5/18 for km/h, 5/9 for °F, 523/125
+    for calorie, etc.  Irrational values (π/180), physically exact but
+    binary-noisy values (pound, foot from pint), and very small exotics
+    (angstrom, electronvolt) all fall back to ``:.15g`` float notation.
+    """
     if not units_str:
         units_str = "dimensionless"
-    # Use approximate comparison to handle floating point precision issues
+    frac = Fraction(magnitude).limit_denominator(_FRAC_LIMIT)
+    if float(frac) == magnitude and _is_5smooth(frac.denominator):
+        if frac == 1:
+            return units_str
+        num, den = frac.numerator, frac.denominator
+        mag_str = str(num) if den == 1 else f"{num}/{den}"
+        return f"{mag_str} {units_str}"
     if abs(magnitude - 1.0) < 1e-12:
         return units_str
     return f"{magnitude:.15g} {units_str}"
@@ -229,9 +269,9 @@ def _fmt_canonical(magnitude: float, units_str: str) -> str:
 def to_base_literal(unit_str: str) -> str:
     """Convert a unit alias string to its pint SI base-unit canonical form.
 
-    The result is a pint-parseable string that encodes both the dimension and
-    the scale factor.  Raises ``pint.UndefinedUnitError`` (or similar) for
-    unrecognised units — there is no silent fallback.
+    The result encodes both the physical dimension and the SI base-unit scale
+    factor.  Raises ``pint.UndefinedUnitError`` (or similar) for unrecognised
+    units — there is no silent fallback.
     """
     pint_str = _UNIT_MAP.get(unit_str, unit_str)
     q = _registry().parse_expression(pint_str).to_base_units()
@@ -240,5 +280,18 @@ def to_base_literal(unit_str: str) -> str:
 
 @functools.lru_cache(maxsize=512)
 def parse_base_literal(canonical: str) -> Any:
-    """Parse a canonical base-unit literal string back to a pint Quantity."""
+    """Parse a canonical base-unit literal string back to a pint Quantity.
+
+    Handles the rational-coefficient prefix produced by :func:`_fmt_canonical`
+    (e.g. ``"5/18 meter / second"``) as well as plain unit strings and the
+    legacy ``:.15g`` float format.
+    """
+    m = _CANON_COEFF.match(canonical)
+    if m:
+        num = int(m.group(1))
+        den = int(m.group(2)) if m.group(2) else 1
+        magnitude = num / den
+        unit_part = m.group(3)
+        q = _registry().parse_expression(unit_part)
+        return (magnitude * q).to_base_units()
     return _registry().parse_expression(canonical).to_base_units()
