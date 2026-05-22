@@ -58,13 +58,9 @@ class ScaleFactor:
     if not TYPE_CHECKING:
 
         def __mul__(self, other: Any) -> Any:
-            # Defer to Quantity.__rmul__ for Quantity / QuantityArray args.
-            if hasattr(other, "_value") and not isinstance(other, (int, float, complex)):
-                return NotImplemented
             return self.value * other
 
         def __rmul__(self, other: Any) -> Any:
-            # Called as other * self.value (e.g. inside Quantity.__rmul__).
             return other * self.value
 
         def __rtruediv__(self, other: Any) -> Any:

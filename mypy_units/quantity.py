@@ -8,211 +8,188 @@ if TYPE_CHECKING:
 _U_co = TypeVar("_U_co", bound=str, covariant=True)
 
 
-class Quantity(Generic[_U_co]):
-    """A numeric value (scalar or numpy array) carrying a static unit annotation.
+class Quantity(float, Generic[_U_co]):
+    """A numeric value carrying a static unit annotation.
 
-    The type parameter is a pint base-unit canonical string (e.g. ``"meter"``).
+    Subclasses ``float``: a ``Quantity`` IS a float at runtime.  The standard
+    (non-escape-hatch) path has no overhead beyond a float-subclass allocation;
+    all dimension tracking happens at static-analysis time via the mypy plugin.
 
-    **Construction — type-only (standard use)**::
+    **Standard use**::
 
-        d: kilometer = Quantity(10)
-        d_arr: kilometer = Quantity(np.array([1.0, 2.0, 3.0]))
+        d: meter = Quantity(10.0)
+        v: meter_per_second = d / t   # plugin tracks dimension, runtime is float
 
-    **Construction — unit-string (escape hatch)**::
+    **Escape hatch** — pass a unit string to get pint backing::
 
-        d = Quantity(10, "km")          # → type kilometer, pint-backed
-
-    **Conversion escape hatch**::
-
-        result = (Quantity(x, "m") / Quantity(t, "s")).to("km/h")
-        # → type kilometer_per_hour; pint validates the conversion at runtime
-
-    **Arithmetic** — all standard operations are supported and propagate to the
-    wrapped value (float or numpy array).  The *static* type of arithmetic
-    results is tracked by the mypy plugin via method hooks.  When either
-    operand is pint-backed the result stays pint-backed so that ``.to()`` can
-    be called further down the expression chain.
+        v: kilometer_per_hour = (Quantity(d, "m") / Quantity(t, "s")).to("km/h")
     """
 
-    _value: Any  # raw magnitude in the Quantity's own unit
-    _pint_q: Any  # pint.Quantity | None; set when constructed with a unit string
+    __slots__ = ()
 
-    def __init__(
-        self, value: int | float | complex | Quantity[Any] = 0, unit: str | None = None
-    ) -> None:
-        raw = value._value if isinstance(value, Quantity) else value
+    def __new__(
+        cls,
+        value: int | float | Quantity[Any] = 0,
+        unit: str | None = None,
+    ) -> Quantity[Any]:
+        raw = float(value)
         if unit is not None:
             from mypy_units.dimension import _registry
 
             pq = _registry().Quantity(raw, unit)
-            self._pint_q = pq
-            self._value = pq.magnitude
-        else:
-            self._pint_q = None
-            self._value = raw
-
-    @classmethod
-    def _from_pint(cls, pq: Any) -> Quantity[Any]:
-        """Wrap an existing pint Quantity, keeping pint backing."""
-        obj = cls.__new__(cls)
-        obj._pint_q = pq
-        obj._value = pq.magnitude
-        return obj
+            obj = float.__new__(_PintQuantity, pq.magnitude)
+            obj._pint_q = pq  # type: ignore[attr-defined]
+            return obj  # type: ignore[return-value]
+        return float.__new__(cls, raw)
 
     def to(self, unit: str) -> Quantity[Any]:
-        """Convert to *unit* via pint and return a new pint-backed Quantity.
-
-        The static return type is anchored to *unit* by the mypy plugin, acting
-        as a checked cast: pint validates the physical compatibility at runtime
-        and raises ``pint.DimensionalityError`` for incompatible dimensions.
-
-        Requires a pint-backed Quantity (created with ``Quantity(value, 'unit')``
-        or produced by arithmetic on pint-backed Quantities).
-        """
-        if self._pint_q is None:
-            raise TypeError(
-                "Quantity.to() is only available on unit-string Quantities. "
-                "Create one with Quantity(value, 'unit') to enable pint-backed conversion."
-            )
-        return Quantity(self._pint_q.to(unit).magnitude)
-
-    @property
-    def value(self) -> Any:
-        return self._value
-
-    def __repr__(self) -> str:
-        if self._pint_q is not None:
-            return f"Quantity({self._value!r}, {str(self._pint_q.units)!r})"
-        return f"Quantity({self._value!r})"
-
-    def __float__(self) -> float:
-        return float(self._value)
-
-    def __int__(self) -> int:
-        return int(self._value)
-
-    def __bool__(self) -> bool:
-        return bool(self._value)
-
-    def __eq__(self, other: object) -> Any:
-        v = other._value if isinstance(other, Quantity) else other
-        return self._value == v
-
-    def __lt__(self, other: Any) -> Any:
-        v = other._value if isinstance(other, Quantity) else other
-        return self._value < v
-
-    def __le__(self, other: Any) -> Any:
-        v = other._value if isinstance(other, Quantity) else other
-        return self._value <= v
-
-    def __gt__(self, other: Any) -> Any:
-        v = other._value if isinstance(other, Quantity) else other
-        return self._value > v
-
-    def __ge__(self, other: Any) -> Any:
-        v = other._value if isinstance(other, Quantity) else other
-        return self._value >= v
+        """Requires a pint-backed Quantity (created with Quantity(value, 'unit'))."""
+        raise TypeError(
+            "Quantity.to() is only available on unit-string Quantities. "
+            "Create one with Quantity(value, 'unit') to enable pint-backed conversion."
+        )
 
     # ------------------------------------------------------------------
-    # Arithmetic — delegate to the wrapped value; the plugin hooks track
-    # the dimension of the result at static analysis time.
-    # When either operand is pint-backed the result stays pint-backed.
+    # Arithmetic — thin wrappers so the mypy plugin's method hooks fire
+    # on Quantity operands and can track dimensions through expressions.
+    # The runtime result is a plain float (no extra allocation).
     # ------------------------------------------------------------------
 
     def _v(self, other: Any) -> Any:
-        return other._value if isinstance(other, Quantity) else other
-
-    def _pq_of(self, other: Any) -> Any:
-        return getattr(other, "_pint_q", None)
+        return float(other) if isinstance(other, (int, float)) else other
 
     def __add__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint(self._pint_q + (opq if opq is not None else self._v(other)))
-        return Quantity(self._value + self._v(other))
+        return float.__add__(self, self._v(other))  # type: ignore[return-value]
 
     def __radd__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint((opq if opq is not None else self._v(other)) + self._pint_q)
-        return Quantity(self._v(other) + self._value)
+        return float.__add__(self, self._v(other))  # type: ignore[return-value]
 
     def __sub__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint(self._pint_q - (opq if opq is not None else self._v(other)))
-        return Quantity(self._value - self._v(other))
+        return float.__sub__(self, self._v(other))  # type: ignore[return-value]
 
     def __rsub__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint((opq if opq is not None else self._v(other)) - self._pint_q)
-        return Quantity(self._v(other) - self._value)
+        return float.__sub__(self._v(other), self)  # type: ignore[return-value]
 
     def __mul__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint(self._pint_q * (opq if opq is not None else self._v(other)))
-        return Quantity(self._value * self._v(other))
+        return float.__mul__(self, self._v(other))  # type: ignore[return-value]
 
     def __rmul__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint((opq if opq is not None else self._v(other)) * self._pint_q)
-        return Quantity(self._v(other) * self._value)
+        return float.__mul__(self, self._v(other))  # type: ignore[return-value]
 
     def __truediv__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint(self._pint_q / (opq if opq is not None else self._v(other)))
-        return Quantity(self._value / self._v(other))
+        return float.__truediv__(self, self._v(other))  # type: ignore[return-value]
 
     def __rtruediv__(self, other: Any) -> Quantity[Any]:
-        if self._pint_q is not None:
-            opq = self._pq_of(other)
-            return Quantity._from_pint((opq if opq is not None else self._v(other)) / self._pint_q)
-        return Quantity(self._v(other) / self._value)
+        return float.__truediv__(self._v(other), self)  # type: ignore[return-value]
 
     def __floordiv__(self, other: Any) -> Quantity[Any]:
-        return Quantity(self._value // self._v(other))
+        return float.__floordiv__(self, self._v(other))  # type: ignore[return-value]
 
     def __pow__(self, exp: int | float, mod: None = None) -> Quantity[Any]:
-        if self._pint_q is not None:
-            return Quantity._from_pint(self._pint_q**exp)
-        return Quantity(self._value**exp)
+        return float.__pow__(self, exp)  # type: ignore[return-value]
 
     def __neg__(self) -> Quantity[Any]:
-        if self._pint_q is not None:
-            return Quantity._from_pint(-self._pint_q)
-        return Quantity(-self._value)
+        return float.__neg__(self)  # type: ignore[return-value]
 
     def __pos__(self) -> Quantity[Any]:
-        if self._pint_q is not None:
-            return Quantity._from_pint(+self._pint_q)
-        return Quantity(+self._value)
+        return float.__pos__(self)  # type: ignore[return-value]
 
     def __abs__(self) -> Quantity[Any]:
-        if self._pint_q is not None:
-            return Quantity._from_pint(abs(self._pint_q))
-        return Quantity(abs(self._value))
+        return float.__abs__(self)  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
-    # NumPy integration — intercept ufuncs and array conversion so that
-    # numpy operations on Quantity objects work correctly at runtime.
+    # NumPy integration
     # ------------------------------------------------------------------
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, np.dtype[Any]]:
         try:
             import numpy as _np
 
-            return _np.asarray(self._value, dtype=dtype)
+            return _np.asarray(float(self), dtype=dtype)
         except ImportError:
             raise TypeError("numpy is required for array conversion") from None
 
     def __array_ufunc__(self, ufunc: Any, method: str, *inputs: Any, **kwargs: Any) -> Any:
-        raw = [x._value if isinstance(x, Quantity) else x for x in inputs]
+        import numpy as _np
+
+        raw = [float(x) if isinstance(x, Quantity) else x for x in inputs]
         result = getattr(ufunc, method)(*raw, **kwargs)
+
+        def _wrap(r: Any) -> Any:
+            if isinstance(r, _np.ndarray):
+                from mypy_units.array_quantity import QuantityArray
+
+                return QuantityArray(r)
+            return Quantity(r)
+
         if isinstance(result, tuple):
-            return tuple(Quantity(r) for r in result)
-        return Quantity(result)
+            return tuple(_wrap(r) for r in result)
+        return _wrap(result)
+
+
+class _PintQuantity(Quantity[Any]):
+    """Pint-backed Quantity returned by ``Quantity(value, 'unit_str')``.
+
+    Propagates pint backing through arithmetic so that ``.to()`` can be
+    called on any intermediate result in an escape-hatch expression chain.
+    """
+
+    __slots__ = ("_pint_q",)
+    _pint_q: Any
+
+    def to(self, unit: str) -> Quantity[Any]:
+        converted = self._pint_q.to(unit)
+        return float.__new__(Quantity, converted.magnitude)
+
+    def __repr__(self) -> str:
+        return f"Quantity({float(self)!r}, {str(self._pint_q.units)!r})"
+
+    @classmethod
+    def _from_pint(cls, pq: Any) -> _PintQuantity:
+        obj = float.__new__(cls, pq.magnitude)
+        obj._pint_q = pq
+        return obj
+
+    def __add__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint(self._pint_q + (opq if opq is not None else float(other)))  # type: ignore[return-value]
+
+    def __radd__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint((opq if opq is not None else float(other)) + self._pint_q)  # type: ignore[return-value]
+
+    def __sub__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint(self._pint_q - (opq if opq is not None else float(other)))  # type: ignore[return-value]
+
+    def __rsub__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint((opq if opq is not None else float(other)) - self._pint_q)  # type: ignore[return-value]
+
+    def __mul__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint(self._pint_q * (opq if opq is not None else float(other)))  # type: ignore[return-value]
+
+    def __rmul__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint((opq if opq is not None else float(other)) * self._pint_q)  # type: ignore[return-value]
+
+    def __truediv__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint(self._pint_q / (opq if opq is not None else float(other)))  # type: ignore[return-value]
+
+    def __rtruediv__(self, other: Any) -> Quantity[Any]:
+        opq = getattr(other, "_pint_q", None)
+        return _PintQuantity._from_pint((opq if opq is not None else float(other)) / self._pint_q)  # type: ignore[return-value]
+
+    def __pow__(self, exp: int | float, mod: None = None) -> Quantity[Any]:
+        return _PintQuantity._from_pint(self._pint_q**exp)  # type: ignore[return-value]
+
+    def __neg__(self) -> Quantity[Any]:
+        return _PintQuantity._from_pint(-self._pint_q)  # type: ignore[return-value]
+
+    def __pos__(self) -> Quantity[Any]:
+        return _PintQuantity._from_pint(+self._pint_q)  # type: ignore[return-value]
+
+    def __abs__(self) -> Quantity[Any]:
+        return _PintQuantity._from_pint(abs(self._pint_q))  # type: ignore[return-value]

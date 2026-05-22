@@ -157,25 +157,25 @@ if __name__ == "__main__":
     T_cold: kelvin = Quantity(150.0)
 
     P_boyle: pascal = boyles_law(P0, V0, V_half)
-    print(f"Boyle (V→V/2):        P = {P_boyle.value:.0f} Pa  ({P_boyle.value / 1e5:.2f} bar)")
+    print(f"Boyle (V→V/2):        P = {P_boyle:.0f} Pa  ({P_boyle / 1e5:.2f} bar)")
 
     V_charles: cubic_meter = charles_law(V0, T0, T_hot)
-    print(f"Charles (T→2T):       V = {V_charles.value:.2f} m³")
+    print(f"Charles (T→2T):       V = {V_charles:.2f} m³")
 
     P_gl: pascal = gay_lussac_law(P0, T0, T_cold)
-    print(f"Gay-Lussac (T→T/2):   P = {P_gl.value:.0f} Pa  ({P_gl.value / 1e5:.2f} bar)")
+    print(f"Gay-Lussac (T→T/2):   P = {P_gl:.0f} Pa  ({P_gl / 1e5:.2f} bar)")
 
     P_comb: pascal = combined_gas_law(P0, V0, T0, V_half, T_hot)
-    print(f"Combined (V/2, 2T):   P = {P_comb.value:.0f} Pa  ({P_comb.value / 1e5:.2f} bar)")
+    print(f"Combined (V/2, 2T):   P = {P_comb:.0f} Pa  ({P_comb / 1e5:.2f} bar)")
 
     P_relief: pascal = Quantity(300_000.0)  # 3 bar relief valve
     P_eq: pascal = equilibrate(P0, V0, T0, V_half, T_hot, P_relief)
-    print(f"Equilibrate (3 bar cap):  P = {P_eq.value:.0f} Pa")
+    print(f"Equilibrate (3 bar cap):  P = {P_eq:.0f} Pa")
 
     P_auto: pascal = select_law(
         P0, V0, T0, new_V=V_half, V_changed=True, new_T=T_hot, T_changed=True
     )
-    print(f"select_law (both changed): P = {P_auto.value:.0f} Pa")
+    print(f"select_law (both changed): P = {P_auto:.0f} Pa")
 
     gauge: pascal = compression_ratio(P0, V0, T0, V_half, T_hot, P0)
-    print(f"Gauge pressure after compression: {gauge.value:.0f} Pa  ({gauge.value / 1e5:.2f} bar)")
+    print(f"Gauge pressure after compression: {gauge:.0f} Pa  ({gauge / 1e5:.2f} bar)")

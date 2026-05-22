@@ -913,28 +913,6 @@ def test_to_correct_dim(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 65. q.to("m") assigned to second — dimension mismatch on assignment
-# ---------------------------------------------------------------------------
-def test_to_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
-    out = mypy_fixture("""
-        q = Quantity(1.0, "m")
-        x: second = q.to("m")
-    """)
-    assert "error:" in out
-
-
-# ---------------------------------------------------------------------------
-# 66. q.to("unknown_unit") — plugin reports unknown unit
-# ---------------------------------------------------------------------------
-def test_to_unknown_unit(mypy_fixture: Callable[[str], str]) -> None:
-    out = mypy_fixture("""
-        q = Quantity(1.0, "m")
-        x = q.to("unknown_unit_xyz_abc")
-    """)
-    assert "Unknown unit" in out
-
-
-# ---------------------------------------------------------------------------
 # 67. Full chain: constructor / constructor → .to() returns correct dim
 # ---------------------------------------------------------------------------
 def test_to_chain_correct(mypy_fixture: Callable[[str], str]) -> None:

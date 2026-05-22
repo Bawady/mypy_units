@@ -633,17 +633,13 @@ def _make_unit_expr_hook(is_array: bool) -> Callable[[AnalyzeTypeContext], Type]
 
 
 # ---------------------------------------------------------------------------
-# Quantity constructor escape-hatch hook
+# Quantity constructor and .to() escape-hatch hooks
 #
-# When the user writes Quantity(val, "unit_str") with a string literal, the
-# plugin resolves the canonical form at type-check time and returns
-# Quantity[Literal["canonical"]] — anchoring the static type while pint
-# validates physical correctness at runtime.
-#
-# .to("unit_str") intentionally has NO hook: its declared return type is
-# Quantity[Any], so mypy accepts the result wherever any Quantity is
-# expected and the LHS annotation becomes the source of truth.  pint
-# validates the conversion at runtime.
+# When the user writes Quantity(val, "unit_str") or q.to("unit_str") with a
+# string literal, the plugin resolves the canonical form at type-check time
+# and returns Quantity[Literal["canonical"]] — anchoring the static type
+# while pint validates physical correctness at runtime.  Unknown unit
+# strings are reported as errors at type-check time.
 # ---------------------------------------------------------------------------
 
 

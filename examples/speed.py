@@ -73,24 +73,24 @@ if __name__ == "__main__":
     d_m: meter = Quantity(100.0)
     t_s: second = Quantity(3600.0)
     v_ms: meter_per_second = speed(d_m, t_s)
-    print(f"Speed: {v_ms.value:.4f} m/s")
+    print(f"Speed: {v_ms:.4f} m/s")
 
     d_km: kilometer = Quantity(100.0)
     t_h: hour = Quantity(2.0)
     v_kmh: kilometer_per_hour = speed_kmh(d_km, t_h)
-    print(f"Speed: {v_kmh.value:.1f} km/h")
+    print(f"Speed: {v_kmh:.1f} km/h")
 
     t2: hour = travel_time(d_km, v_kmh)
-    print(f"Travel time: {t2.value:.1f} h")
+    print(f"Travel time: {t2:.1f} h")
 
     d_m2: meter = Quantity(100.0)
     t_s2: second = Quantity(50.0)
     v_kmh2: kilometer_per_hour = speed_in_kmh(d_m2, t_s2)
-    print(f"Speed: {v_kmh2.value:.1f} km/h")
+    print(f"Speed: {v_kmh2:.1f} km/h")
 
     v_ms2: meter_per_second = speed(d_m2, t_s2)
     t3: hour = travel_time_in_hours(d_m2, v_ms2)
-    print(f"Travel time: {t3.value:.6f} h")
+    print(f"Travel time: {t3:.6f} h")
 
     # Conversions
     d_km_from_m: kilometer = d_m / ScaleFactor(1000)

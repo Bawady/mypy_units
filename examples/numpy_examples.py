@@ -64,8 +64,8 @@ def accel2_arr(dist: Array[meter], t: Array[second]) -> Array[meter_per_second_s
 d_scalar: meter = Quantity(10.0)
 t_scalar: second = Quantity(2.0)
 v_scalar: meter_per_second = speed(d_scalar, t_scalar)
-print(f"scalar speed:  {v_scalar.value} m/s")
-print(f"scalar accel2: {accel2(d_scalar, t_scalar).value} m/s²")
+print(f"scalar speed:  {v_scalar} m/s")
+print(f"scalar accel2: {accel2(d_scalar, t_scalar)} m/s²")
 
 dist: meter = Quantity(10.0)
 m_kg: kilogram = Quantity(2.0)
@@ -73,7 +73,7 @@ t_1: second = Quantity(1.0)
 
 p: pascal = m_kg / (dist * t_1**2)
 f: newton = p * dist**2
-print(f"pressure: {p.value} Pa,  force: {f.value} N")
+print(f"pressure: {p} Pa,  force: {f} N")
 
 # ---------------------------------------------------------------------------
 # Array demo
@@ -92,4 +92,4 @@ print(f"side lengths:  {side_arr.value}")
 # sqrt on a scalar square_meter quantity
 area_scalar: square_meter = Quantity(9.0)
 side_scalar: meter = np.sqrt(area_scalar)
-print(f"scalar side:   {side_scalar.value}")
+print(f"scalar side:   {side_scalar}")

@@ -39,7 +39,7 @@ class QuantityArray(Generic[_Q_co]):
         return f"QuantityArray({self._value!r})"
 
     def _v(self, other: Any) -> Any:
-        return other._value if hasattr(other, "_value") else other
+        return other._value if isinstance(other, QuantityArray) else other
 
     # ------------------------------------------------------------------
     # Arithmetic — delegates to the wrapped ndarray; plugin hooks track
@@ -96,7 +96,7 @@ class QuantityArray(Generic[_Q_co]):
         return _np.asarray(self._value, dtype=dtype)
 
     def __array_ufunc__(self, ufunc: Any, method: str, *inputs: Any, **kwargs: Any) -> Any:
-        raw = [x._value if hasattr(x, "_value") else x for x in inputs]
+        raw = [x._value if isinstance(x, QuantityArray) else x for x in inputs]
         result = getattr(ufunc, method)(*raw, **kwargs)
         if isinstance(result, tuple):
             return tuple(QuantityArray(r) for r in result)

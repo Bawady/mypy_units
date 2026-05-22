@@ -137,7 +137,7 @@ def simulate_bounce(
     positions: list[float] = []
     for _ in range(steps):
         x, v = trajectory_euler(x, v, a, dt, x_wall)
-        positions.append(x.value)
+        positions.append(float(x))
     return positions
 
 
@@ -154,18 +154,18 @@ if __name__ == "__main__":
     Ep: joule = gravitational_pe(m_kg, g_ms2, h_m)
     v_imp: meter_per_second = freefall_speed(g_ms2, h_m)
 
-    print(f"Weight:           {W.value:.1f} N")
-    print(f"Potential energy: {Ep.value:.0f} J")
-    print(f"Impact speed:     {v_imp.value:.2f} m/s")
+    print(f"Weight:           {W:.1f} N")
+    print(f"Potential energy: {Ep:.0f} J")
+    print(f"Impact speed:     {v_imp:.2f} m/s")
 
     v0: meter_per_second = Quantity(30.0)
     a_brake: meter_per_second_squared = Quantity(7.0)
     t_react: second = Quantity(1.5)
     d_stop: meter = stopping_distance(v0, a_brake, t_react)
-    print(f"Stopping distance: {d_stop.value:.1f} m")
+    print(f"Stopping distance: {d_stop:.1f} m")
 
     T_pend: second = pendulum_period(Quantity(1.0), g_ms2)
-    print(f"Pendulum period (L=1 m): {T_pend.value:.3f} s")
+    print(f"Pendulum period (L=1 m): {T_pend:.3f} s")
 
     wall: meter = Quantity(10.0)
     traj = simulate_bounce(
