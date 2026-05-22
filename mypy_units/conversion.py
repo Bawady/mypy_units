@@ -27,6 +27,7 @@ operand as a *unit-conversion factor*, applying the invariant
 Plain scalars (bare float/int literals or variables) do **not** affect the
 inferred unit type; only ``ScaleFactor``-wrapped values do.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -55,6 +56,7 @@ class ScaleFactor:
     # ------------------------------------------------------------------
 
     if not TYPE_CHECKING:
+
         def __mul__(self, other: Any) -> Any:
             # Defer to Quantity.__rmul__ for Quantity / QuantityArray args.
             if hasattr(other, "_value") and not isinstance(other, (int, float, complex)):

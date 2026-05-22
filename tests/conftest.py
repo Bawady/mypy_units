@@ -1,4 +1,5 @@
 """Shared helpers for running mypy on inline Python source fixtures."""
+
 from __future__ import annotations
 
 import textwrap
@@ -41,9 +42,7 @@ def mypy_fixture(tmp_path: Path):
 
         src = tmp_path / "check.py"
         src.write_text(PREAMBLE + textwrap.dedent(source), encoding="utf-8")
-        stdout, stderr, _ = mypy.api.run(
-            [str(src), f"--config-file={cfg}", "--no-error-summary"]
-        )
+        stdout, stderr, _ = mypy.api.run([str(src), f"--config-file={cfg}", "--no-error-summary"])
         return stdout + stderr
 
     return run

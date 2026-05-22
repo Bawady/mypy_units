@@ -4,7 +4,7 @@ from collections.abc import Callable
 from fractions import Fraction
 from typing import Any
 
-from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, NameExpr, OpExpr
+from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, NameExpr, OpExpr, StrExpr
 from mypy.plugin import (
     AnalyzeTypeContext,
     FunctionContext,
@@ -43,6 +43,7 @@ _SCALE_EPSILON = 1e-6
 # ---------------------------------------------------------------------------
 # Type-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _unit_str(tp: Type) -> str | None:
     """Extract the dimension string from Quantity[Literal["…"]] or
@@ -95,6 +96,7 @@ def _canonical(q: Any) -> str:
 # the template has an unexpected structure.
 # ---------------------------------------------------------------------------
 
+
 def _make_dim_type(template: Type, dim_str: str) -> Type | None:
     proper = get_proper_type(template)
     if not isinstance(proper, Instance):
@@ -127,6 +129,7 @@ def _make_dim_type(template: Type, dim_str: str) -> Type | None:
 # ---------------------------------------------------------------------------
 # Core dimension check (call-site)
 # ---------------------------------------------------------------------------
+
 
 def _check_call(
     ctx: FunctionContext | MethodContext,
@@ -182,9 +185,8 @@ def _check_call(
 # Callee type lookup
 # ---------------------------------------------------------------------------
 
-def _callee_callable(
-    ctx: FunctionContext | MethodContext, fullname: str
-) -> CallableType | None:
+
+def _callee_callable(ctx: FunctionContext | MethodContext, fullname: str) -> CallableType | None:
     parts = fullname.rsplit(".", 1)
     if len(parts) != 2:
         return None
@@ -212,6 +214,7 @@ def _callee_callable(
 # Cross-type rule: if either operand is a QuantityArray, the result is a
 # QuantityArray (matching numpy broadcasting semantics).
 # ---------------------------------------------------------------------------
+
 
 def _get_scalefactor_value(node: object) -> float | None:
     """Extract the scalar from a ``ScaleFactor(x)`` AST call node.
@@ -319,11 +322,7 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
         # When self is a scalar Quantity but other is a QuantityArray, use
         # the array operand as the result template so the return type is
         # QuantityArray rather than Quantity.
-        if (
-            not _is_array_type(ctx.type)
-            and other_tp is not None
-            and _is_array_type(other_tp)
-        ):
+        if not _is_array_type(ctx.type) and other_tp is not None and _is_array_type(other_tp):
             result = _make_dim_type(other_tp, dim_str)
             if result is not None:
                 return result
@@ -362,19 +361,19 @@ def _make_pow_hook() -> Callable[[MethodContext], Type]:
 
 def _arith_hooks_for(fullname: str) -> dict[str, Callable[[MethodContext], Type]]:
     return {
-        f"{fullname}.__add__":      _make_arith_hook("+"),
-        f"{fullname}.__radd__":     _make_arith_hook("+"),
-        f"{fullname}.__sub__":      _make_arith_hook("-"),
-        f"{fullname}.__rsub__":     _make_arith_hook("-"),
-        f"{fullname}.__mul__":      _make_arith_hook("*"),
-        f"{fullname}.__rmul__":     _make_arith_hook("*"),
-        f"{fullname}.__truediv__":  _make_arith_hook("/"),
+        f"{fullname}.__add__": _make_arith_hook("+"),
+        f"{fullname}.__radd__": _make_arith_hook("+"),
+        f"{fullname}.__sub__": _make_arith_hook("-"),
+        f"{fullname}.__rsub__": _make_arith_hook("-"),
+        f"{fullname}.__mul__": _make_arith_hook("*"),
+        f"{fullname}.__rmul__": _make_arith_hook("*"),
+        f"{fullname}.__truediv__": _make_arith_hook("/"),
         f"{fullname}.__floordiv__": _make_arith_hook("/"),
         f"{fullname}.__rtruediv__": _make_arith_hook("/r"),
-        f"{fullname}.__neg__":      _make_arith_hook("unary"),
-        f"{fullname}.__pos__":      _make_arith_hook("unary"),
-        f"{fullname}.__abs__":      _make_arith_hook("unary"),
-        f"{fullname}.__pow__":      _make_pow_hook(),
+        f"{fullname}.__neg__": _make_arith_hook("unary"),
+        f"{fullname}.__pos__": _make_arith_hook("unary"),
+        f"{fullname}.__abs__": _make_arith_hook("unary"),
+        f"{fullname}.__pow__": _make_pow_hook(),
     }
 
 
@@ -387,6 +386,7 @@ _ARITH_HOOKS: dict[str, Callable[[MethodContext], Type]] = {
 # ---------------------------------------------------------------------------
 # Hook factories (call-site checks)
 # ---------------------------------------------------------------------------
+
 
 def _make_function_hook(fullname: str) -> Callable[[FunctionContext], Type]:
     def hook(ctx: FunctionContext) -> Type:
@@ -415,6 +415,7 @@ def _make_method_hook(fullname: str) -> Callable[[MethodContext], Type]:
 # the plugin's own dimension check runs.
 # ---------------------------------------------------------------------------
 
+
 def _make_sig_hook(fullname: str) -> Callable[[FunctionSigContext], CallableType]:
     def hook(ctx: FunctionSigContext) -> CallableType:
         sig = ctx.default_signature
@@ -438,6 +439,7 @@ def _make_sig_hook(fullname: str) -> Callable[[FunctionSigContext], CallableType
 # ---------------------------------------------------------------------------
 # NumPy function hooks — dimension-aware wrappers in mypy_units.numpy
 # ---------------------------------------------------------------------------
+
 
 def _read_numeric_arg(
     context: object, arg_types: list[list[Type]], arg_idx: int
@@ -473,6 +475,7 @@ def _make_numpy_power_hook() -> Callable[[FunctionContext], Type]:
             return ctx.default_return_type  # type: ignore[return-value]
         result = _make_dim_type(base_tp, dim_str)
         return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
+
     return hook
 
 
@@ -491,13 +494,14 @@ def _make_numpy_unary_dim_hook(exp: Fraction) -> Callable[[FunctionContext], Typ
             return ctx.default_return_type  # type: ignore[return-value]
         result = _make_dim_type(arg_tp, dim_str)
         return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
+
     return hook
 
 
 _NUMPY_FUNCTION_HOOKS: dict[str, Callable[[FunctionContext], Type]] = {
     f"{_NUMPY_MOD}.power": _make_numpy_power_hook(),
-    f"{_NUMPY_MOD}.sqrt":  _make_numpy_unary_dim_hook(Fraction(1, 2)),
-    f"{_NUMPY_MOD}.cbrt":  _make_numpy_unary_dim_hook(Fraction(1, 3)),
+    f"{_NUMPY_MOD}.sqrt": _make_numpy_unary_dim_hook(Fraction(1, 2)),
+    f"{_NUMPY_MOD}.cbrt": _make_numpy_unary_dim_hook(Fraction(1, 3)),
 }
 
 # ---------------------------------------------------------------------------
@@ -507,11 +511,11 @@ _NUMPY_FUNCTION_HOOKS: dict[str, Callable[[FunctionContext], Type]] = {
 _NP_UFUNC_PKG = "numpy._typing._ufunc"
 
 _UFUNC_DIM_RULES: dict[str, tuple[int, Fraction | None]] = {
-    "power":      (2, None),
+    "power": (2, None),
     "float_power": (2, None),
-    "sqrt":       (1, Fraction(1, 2)),
-    "cbrt":       (1, Fraction(1, 3)),
-    "square":     (1, Fraction(2)),
+    "sqrt": (1, Fraction(1, 2)),
+    "cbrt": (1, Fraction(1, 3)),
+    "square": (1, Fraction(2)),
     "reciprocal": (1, Fraction(-1)),
 }
 
@@ -606,7 +610,7 @@ def _make_unit_expr_hook(is_array: bool) -> Callable[[AnalyzeTypeContext], Type]
             unit_str = arg.value
         else:
             ctx.api.fail(
-                f'{name}[] requires a string argument. '
+                f"{name}[] requires a string argument. "
                 f'Simple names: {name}["meter"]. Compound expressions: {name}[Literal["km/h"]].',
                 ctx.context,
             )
@@ -614,7 +618,7 @@ def _make_unit_expr_hook(is_array: bool) -> Callable[[AnalyzeTypeContext], Type]
         try:
             canonical = to_base_literal(unit_str)
         except Exception:
-            ctx.api.fail(f'Unknown unit expression: {unit_str!r}', ctx.context)
+            ctx.api.fail(f"Unknown unit expression: {unit_str!r}", ctx.context)
             return AnyType(TypeOfAny.from_error)
 
         str_type = ctx.api.named_type("builtins.str", [])
@@ -629,13 +633,52 @@ def _make_unit_expr_hook(is_array: bool) -> Callable[[AnalyzeTypeContext], Type]
 
 
 # ---------------------------------------------------------------------------
+# Quantity constructor escape-hatch hook
+#
+# When the user writes Quantity(val, "unit_str") with a string literal, the
+# plugin resolves the canonical form at type-check time and returns
+# Quantity[Literal["canonical"]] — anchoring the static type while pint
+# validates physical correctness at runtime.
+#
+# .to("unit_str") intentionally has NO hook: its declared return type is
+# Quantity[Any], so mypy accepts the result wherever any Quantity is
+# expected and the LHS annotation becomes the source of truth.  pint
+# validates the conversion at runtime.
+# ---------------------------------------------------------------------------
+
+
+def _make_quantity_init_hook() -> Callable[[FunctionContext], Type]:
+    def hook(ctx: FunctionContext) -> Type:
+        if not isinstance(ctx.context, CallExpr) or len(ctx.context.args) < 2:
+            return ctx.default_return_type  # type: ignore[return-value]
+        arg = ctx.context.args[1]
+        if not isinstance(arg, StrExpr):
+            return ctx.default_return_type  # type: ignore[return-value]
+        try:
+            canonical = to_base_literal(arg.value)
+        except Exception:
+            ctx.api.fail(f"Unknown unit: {arg.value!r}", ctx.context)
+            return AnyType(TypeOfAny.from_error)
+        proper = get_proper_type(ctx.default_return_type)
+        if not isinstance(proper, Instance):
+            return ctx.default_return_type  # type: ignore[return-value]
+        str_type = ctx.api.named_generic_type("builtins.str", [])
+        lit = LiteralType(value=canonical, fallback=str_type)
+        return proper.copy_modified(args=[lit])
+
+    return hook
+
+
+_QUANTITY_INIT_HOOK = _make_quantity_init_hook()
+
+
+# ---------------------------------------------------------------------------
 # Plugin
 # ---------------------------------------------------------------------------
 
+
 class PintUnitsPlugin(Plugin):
-    def get_type_analyze_hook(
-        self, fullname: str
-    ) -> Callable[[AnalyzeTypeContext], Type] | None:
+    def get_type_analyze_hook(self, fullname: str) -> Callable[[AnalyzeTypeContext], Type] | None:
         if fullname == _SCALAR_FULLNAME:
             return _make_unit_expr_hook(is_array=False)
         if fullname == _ARRAY_EXPR_FULLNAME:
@@ -647,16 +690,14 @@ class PintUnitsPlugin(Plugin):
     ) -> Callable[[FunctionSigContext], CallableType] | None:
         return _make_sig_hook(fullname)
 
-    def get_function_hook(
-        self, fullname: str
-    ) -> Callable[[FunctionContext], Type] | None:
+    def get_function_hook(self, fullname: str) -> Callable[[FunctionContext], Type] | None:
         if fullname in _NUMPY_FUNCTION_HOOKS:
             return _NUMPY_FUNCTION_HOOKS[fullname]
+        if fullname == _QUANTITY_FULLNAME:
+            return _QUANTITY_INIT_HOOK
         return _make_function_hook(fullname)
 
-    def get_method_hook(
-        self, fullname: str
-    ) -> Callable[[MethodContext], Type] | None:
+    def get_method_hook(self, fullname: str) -> Callable[[MethodContext], Type] | None:
         if fullname in _ARITH_HOOKS:
             return _ARITH_HOOKS[fullname]
         if fullname in _NUMPY_UFUNC_HOOKS:

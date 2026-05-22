@@ -107,9 +107,7 @@ def parse_dim_str(s: str) -> DimDict | None:
             term = term.strip()
             if not term:
                 continue
-            m = re.fullmatch(
-                r"(\[[\w]+\]|\d+)(?:\s*\*\*\s*(\d+|\(\d+/\d+\)))?", term
-            )
+            m = re.fullmatch(r"(\[[\w]+\]|\d+)(?:\s*\*\*\s*(\d+|\(\d+/\d+\)))?", term)
             if m is None:
                 return None
             key, exp_str = m.group(1), m.group(2)
@@ -164,6 +162,7 @@ def dims_equal(a: DimDict, b: DimDict) -> bool:
 # Arithmetic on DimDicts
 # ---------------------------------------------------------------------------
 
+
 def dim_mul(a: DimDict, b: DimDict) -> DimDict:
     result = dict(a)
     for k, v in b.items():
@@ -203,10 +202,10 @@ def dim_pow(a: DimDict, exp: int | float) -> DimDict:
 # ---------------------------------------------------------------------------
 
 _UNIT_MAP: dict[str, str] = {
-    "square_meter":             "m**2",
-    "cubic_meter":              "m**3",
-    "meter_per_second":         "m/s",
-    "kilometer_per_hour":       "km/h",
+    "square_meter": "m**2",
+    "cubic_meter": "m**3",
+    "meter_per_second": "m/s",
+    "kilometer_per_hour": "km/h",
     "meter_per_second_squared": "m/s**2",
     # Offset temperature units: map to Kelvin-scale equivalents so that
     # only the multiplicative scale factor is used (no offset arithmetic).

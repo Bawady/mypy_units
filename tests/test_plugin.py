@@ -1,4 +1,5 @@
 """Tests for mypy_units plugin — invokes real mypy on inline fixtures."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -8,8 +9,7 @@ def no_error(output: str) -> None:
     assert "Dimension mismatch" not in output, f"Unexpected error:\n{output}"
     assert "Unit mismatch" not in output, f"Unexpected error:\n{output}"
     unexpected = [
-        line for line in output.splitlines()
-        if "error:" in line and "[empty-body]" not in line
+        line for line in output.splitlines() if "error:" in line and "[empty-body]" not in line
     ]
     assert not unexpected, "Unexpected mypy error:\n" + "\n".join(unexpected)
 
@@ -402,11 +402,13 @@ def test_mixed_params_call_wrong_array_dim(mypy_fixture: Callable[[str], str]) -
 # Runtime: QuantityArray dtype enforcement (no mypy fixture needed)
 # ---------------------------------------------------------------------------
 
+
 def test_array_rejects_nonnumeric_dtype() -> None:
     import numpy as np
     import pytest
 
     from mypy_units import QuantityArray
+
     with pytest.raises(TypeError, match="numeric"):
         QuantityArray(np.array(["hello", "world"]))
 
@@ -415,6 +417,7 @@ def test_array_accepts_float64_dtype() -> None:
     import numpy as np
 
     from mypy_units import QuantityArray
+
     arr = QuantityArray(np.array([1.0, 2.0, 3.0]))
     assert arr.value.dtype == np.float64
 
@@ -423,6 +426,7 @@ def test_array_accepts_integer_dtype() -> None:
     import numpy as np
 
     from mypy_units import QuantityArray
+
     arr = QuantityArray(np.array([1, 2, 3]))
     assert np.issubdtype(arr.value.dtype, np.integer)
 
@@ -557,6 +561,7 @@ def test_conversion_factor_div_correct(mypy_fixture: Callable[[str], str]) -> No
 # ScaleFactor: comprehensive positive / negative test suite
 # ===========================================================================
 
+
 # ---------------------------------------------------------------------------
 # 38. CF necessary but missing (no scalar at all) — return-value error
 # ---------------------------------------------------------------------------
@@ -681,6 +686,7 @@ def test_cf_unit_reassign_wrong_factor(mypy_fixture: Callable[[str], str]) -> No
 # ===========================================================================
 # Scalar["..."] and Array["..."] expression tests
 # ===========================================================================
+
 
 # ---------------------------------------------------------------------------
 # 48. Scalar["meter"] as annotation — same as meter, should pass
@@ -845,3 +851,136 @@ def test_invalid_pint_string(mypy_fixture: Callable[[str], str]) -> None:
     assert "Internal error" not in out
 
 
+# ===========================================================================
+# Quantity(val, "unit_str") constructor escape hatch
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# 60. Quantity(val, "m") is accepted as meter
+# ---------------------------------------------------------------------------
+def test_quantity_unit_str_constructor_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        x: meter = Quantity(1.0, "m")
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 61. Quantity(val, "km") is accepted as kilometer
+# ---------------------------------------------------------------------------
+def test_quantity_unit_str_constructor_km(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        x: kilometer = Quantity(1.0, "km")
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 62. Quantity(val, "m") assigned to second — dimension mismatch on assignment
+# ---------------------------------------------------------------------------
+def test_quantity_unit_str_constructor_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        x: second = Quantity(1.0, "m")
+    """)
+    assert "error:" in out
+
+
+# ---------------------------------------------------------------------------
+# 63. Quantity(val, "unknown_unit") — plugin reports unknown unit
+# ---------------------------------------------------------------------------
+def test_quantity_unit_str_constructor_unknown(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        x = Quantity(1.0, "unknown_unit_xyz_abc")
+    """)
+    assert "Unknown unit" in out
+
+
+# ===========================================================================
+# q.to("unit_str") escape hatch
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# 64. q.to("m/s") accepted as meter_per_second
+# ---------------------------------------------------------------------------
+def test_to_correct_dim(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        q = Quantity(3.6, "km/h")
+        x: meter_per_second = q.to("m/s")
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 65. q.to("m") assigned to second — dimension mismatch on assignment
+# ---------------------------------------------------------------------------
+def test_to_wrong_dim(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        q = Quantity(1.0, "m")
+        x: second = q.to("m")
+    """)
+    assert "error:" in out
+
+
+# ---------------------------------------------------------------------------
+# 66. q.to("unknown_unit") — plugin reports unknown unit
+# ---------------------------------------------------------------------------
+def test_to_unknown_unit(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        q = Quantity(1.0, "m")
+        x = q.to("unknown_unit_xyz_abc")
+    """)
+    assert "Unknown unit" in out
+
+
+# ---------------------------------------------------------------------------
+# 67. Full chain: constructor / constructor → .to() returns correct dim
+# ---------------------------------------------------------------------------
+def test_to_chain_correct(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        d = Quantity(100.0, "m")
+        t = Quantity(10.0, "s")
+        v: kilometer_per_hour = (d / t).to("km/h")
+    """)
+    no_error(out)
+
+
+# ===========================================================================
+# Runtime: pint-backed Quantity mechanics
+# ===========================================================================
+
+
+def test_runtime_quantity_unit_str_value() -> None:
+    from mypy_units import Quantity
+
+    q = Quantity(1000.0, "m")
+    assert float(q) == 1000.0
+
+
+def test_runtime_to_converts_correctly() -> None:
+    from mypy_units import Quantity
+
+    q = Quantity(1000.0, "m")
+    result = q.to("km")
+    assert abs(float(result) - 1.0) < 1e-9
+
+
+def test_runtime_to_raises_on_non_pint_backed() -> None:
+    import pytest
+
+    from mypy_units import Quantity
+
+    q = Quantity(1.0)
+    with pytest.raises(TypeError, match="unit-string"):
+        q.to("km")
+
+
+def test_runtime_arithmetic_preserves_pint_backing() -> None:
+    from mypy_units import Quantity
+
+    d = Quantity(3600.0, "m")
+    t = Quantity(1.0, "s")
+    v = d / t
+    result = v.to("km/h")
+    assert abs(float(result) - 12960.0) < 1e-6

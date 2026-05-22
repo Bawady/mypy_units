@@ -11,6 +11,7 @@ factor as a pint-parseable canonical literal.  The mypy plugin uses this
 information to detect both dimension mismatches *and* scaling mismatches in
 function bodies and at call sites.
 """
+
 from __future__ import annotations
 
 from typing import Literal

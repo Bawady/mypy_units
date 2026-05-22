@@ -1,4 +1,5 @@
 """numpy array quantities with physical unit annotations."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
@@ -24,11 +25,10 @@ class QuantityArray(Generic[_Q_co]):
 
     def __init__(self, value: Any) -> None:
         import numpy as _np
+
         arr = _np.asarray(value)
         if not _np.issubdtype(arr.dtype, _np.number):
-            raise TypeError(
-                f"QuantityArray dtype must be numeric (float or int), got {arr.dtype}"
-            )
+            raise TypeError(f"QuantityArray dtype must be numeric (float or int), got {arr.dtype}")
         self._value = arr
 
     @property
@@ -92,11 +92,10 @@ class QuantityArray(Generic[_Q_co]):
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, np.dtype[Any]]:
         import numpy as _np
+
         return _np.asarray(self._value, dtype=dtype)
 
-    def __array_ufunc__(
-        self, ufunc: Any, method: str, *inputs: Any, **kwargs: Any
-    ) -> Any:
+    def __array_ufunc__(self, ufunc: Any, method: str, *inputs: Any, **kwargs: Any) -> Any:
         raw = [x._value if hasattr(x, "_value") else x for x in inputs]
         result = getattr(ufunc, method)(*raw, **kwargs)
         if isinstance(result, tuple):

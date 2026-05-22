@@ -8,15 +8,16 @@ or QuantityArray types.
 Example::
 
     from mypy_units import Scalar, Array
-    
+
     def speed(d: Scalar["km"], t: Scalar["hour"]) -> Scalar["km/h"]:
         return d / t
-    
+
     def speeds(d: Array["km"], t: Array["hour"]) -> Array["km/h"]:
         return d / t
 
 The string syntax supports full pint expressions like "km/h", "m/s**2", etc.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -38,5 +39,7 @@ if not TYPE_CHECKING:
             canonical = to_base_literal(item)
             return QuantityArray[Quantity[Literal[canonical]]]
 else:
+
     class Scalar: ...
+
     class Array: ...
