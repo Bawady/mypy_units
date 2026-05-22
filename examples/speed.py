@@ -10,9 +10,12 @@ plugin that the scalar is a unit-conversion factor (inverse scale semantics:
 multiplying the value by k converts to a k-times-smaller unit).  Plain
 scalars have no effect on the inferred unit type.
 """
+
 from __future__ import annotations
 
-from mypy_units import ConversionFactor, Quantity
+from typing import Literal
+
+from mypy_units import Array, Quantity, QuantityArray, ScaleFactor
 from mypy_units.units import (
     hour,
     kilometer,
@@ -40,7 +43,7 @@ def speed_in_kmh(distance: meter, t: second) -> kilometer_per_hour:
     Wrapping in ConversionFactor tells the plugin to apply inverse-scale
     semantics: the type scale is divided by 3.6, yielding km/h.
     """
-    return ConversionFactor(3.6) * distance / t
+    return ScaleFactor(3.6) * distance / t
 
 
 def travel_time(distance: kilometer, v: kilometer_per_hour) -> hour:
@@ -54,16 +57,16 @@ def travel_time_in_hours(distance: meter, v: meter_per_second) -> hour:
     m / (m/s) = second; dividing by ConversionFactor(3600) converts to hours
     because 1 hour = 3600 seconds.
     """
-    return (distance / v) / ConversionFactor(3600)
+    return (distance / v) / ScaleFactor(3600)
 
 
-def travel_time_wrong(distance: kilometer, v: meter_per_second) -> hour:
+def travel_time_wrong(distance: meter, v: Array[Literal["m/s"]]) -> QuantityArray[hour]:
     """t = d / v — WRONG: km / (m/s) has scale 1000 s, not 3600 s (= 1 h).
 
     mypy flags this because 1000 s ≠ 3600 s; no literal scalar is present to
     bridge the gap.
     """
-    return distance / v  # type: ignore[return-value]
+    return distance / v / ScaleFactor(3600)
 
 
 if __name__ == "__main__":
@@ -90,5 +93,5 @@ if __name__ == "__main__":
     print(f"Travel time: {t3.value:.6f} h")
 
     # Conversions
-    d_km_from_m: kilometer = d_m / ConversionFactor(1000)
-    v_mkh_from_ms: kilometer_per_hour = d_m / t_s * ConversionFactor(3.6)
+    d_km_from_m: kilometer = d_m / ScaleFactor(1000)
+    v_mkh_from_ms: kilometer_per_hour = d_m / t_s * ScaleFactor(3.6)

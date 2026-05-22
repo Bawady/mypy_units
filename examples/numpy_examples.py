@@ -4,6 +4,7 @@ Scalar functions use plain unit aliases (``meter``, ``second``, …).
 Array functions use ``Array[unit]`` to annotate numpy array operands.
 Both are fully dimension-checked by the mypy plugin.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,6 +25,7 @@ from mypy_units.units import (
 # Scalar functions — unit hint is a plain float alias
 # ---------------------------------------------------------------------------
 
+
 def speed(distance: meter, t: second) -> meter_per_second:
     return distance / t
 
@@ -40,6 +42,7 @@ def accel2(dist: meter, t: second) -> meter_per_second_squared:
 # ---------------------------------------------------------------------------
 # Array functions — unit hint is Array[alias]
 # ---------------------------------------------------------------------------
+
 
 def speed_arr(distance: Array[meter], t: Array[second]) -> Array[meter_per_second]:
     return distance / t

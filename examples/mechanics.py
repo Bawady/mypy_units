@@ -3,6 +3,7 @@
 Run:         python examples/mechanics.py
 Type-check:  mypy examples/mechanics.py
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,6 +25,7 @@ from mypy_units.units import watt as mech_watt  # avoid clash with np.power
 # ---------------------------------------------------------------------------
 # Elementary laws (one-liners — show that formula structure encodes the units)
 # ---------------------------------------------------------------------------
+
 
 def newton_second(m: kilogram, a: meter_per_second_squared) -> newton:
     """F = m·a"""
@@ -72,9 +74,8 @@ def pendulum_period(L: meter, g: meter_per_second_squared) -> second:
 # Kinematics with branching
 # ---------------------------------------------------------------------------
 
-def stopping_distance(
-    v: meter_per_second, a: meter_per_second_squared, t_react: second
-) -> meter:
+
+def stopping_distance(v: meter_per_second, a: meter_per_second_squared, t_react: second) -> meter:
     """Total braking distance = reaction gap + kinematic stopping gap.
 
     Dimension trace:
@@ -83,7 +84,7 @@ def stopping_distance(
       sum          → meter + meter                       = meter ✓
     """
     reaction_gap: meter = v * t_react
-    braking_gap: meter  = v * v / a
+    braking_gap: meter = v * v / a
     return reaction_gap + braking_gap
 
 
@@ -113,7 +114,7 @@ def trajectory_euler(
     tracks — result is still meter_per_second.
     """
     new_v: meter_per_second = v + a * dt
-    new_x: meter            = x + v * dt
+    new_x: meter = x + v * dt
 
     if new_x >= x_wall:
         new_x = x_wall
@@ -131,8 +132,8 @@ def simulate_bounce(
     steps: int,
 ) -> list[float]:
     """Run the Euler bouncer for *steps* iterations; return position values."""
-    x: meter             = x0
-    v: meter_per_second  = v0
+    x: meter = x0
+    v: meter_per_second = v0
     positions: list[float] = []
     for _ in range(steps):
         x, v = trajectory_euler(x, v, a, dt, x_wall)
@@ -145,21 +146,21 @@ def simulate_bounce(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    m_kg: kilogram                  = Quantity(70.0)
+    m_kg: kilogram = Quantity(70.0)
     g_ms2: meter_per_second_squared = Quantity(9.81)
-    h_m: meter                      = Quantity(50.0)
+    h_m: meter = Quantity(50.0)
 
-    W: newton  = newton_second(m_kg, g_ms2)
-    Ep: joule  = gravitational_pe(m_kg, g_ms2, h_m)
+    W: newton = newton_second(m_kg, g_ms2)
+    Ep: joule = gravitational_pe(m_kg, g_ms2, h_m)
     v_imp: meter_per_second = freefall_speed(g_ms2, h_m)
 
     print(f"Weight:           {W.value:.1f} N")
     print(f"Potential energy: {Ep.value:.0f} J")
     print(f"Impact speed:     {v_imp.value:.2f} m/s")
 
-    v0: meter_per_second              = Quantity(30.0)
+    v0: meter_per_second = Quantity(30.0)
     a_brake: meter_per_second_squared = Quantity(7.0)
-    t_react: second                   = Quantity(1.5)
+    t_react: second = Quantity(1.5)
     d_stop: meter = stopping_distance(v0, a_brake, t_react)
     print(f"Stopping distance: {d_stop.value:.1f} m")
 

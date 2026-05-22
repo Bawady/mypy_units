@@ -3,6 +3,7 @@
 Run:         python examples/waves.py
 Type-check:  mypy examples/waves.py
 """
+
 from __future__ import annotations
 
 from mypy_units import Quantity
@@ -16,6 +17,7 @@ from mypy_units.units import (
 # ---------------------------------------------------------------------------
 # Elementary wave relations
 # ---------------------------------------------------------------------------
+
 
 def wavelength(c: meter_per_second, f: hertz) -> meter:
     """λ = c / f
@@ -70,6 +72,7 @@ def doppler_observed(
 # Resonant cavity — moderate arithmetic plus a branch
 # ---------------------------------------------------------------------------
 
+
 def resonant_length(
     c: meter_per_second,
     f: hertz,
@@ -90,6 +93,7 @@ def resonant_length(
 # ---------------------------------------------------------------------------
 # Standing-wave spectrum — branching over multiple harmonics
 # ---------------------------------------------------------------------------
+
 
 def harmonic_frequencies(
     c: meter_per_second,
@@ -121,6 +125,7 @@ def harmonic_frequencies(
 # Classify by frequency range — pure branching on quantity comparisons
 # ---------------------------------------------------------------------------
 
+
 def audio_band(
     f: hertz,
     f_low: hertz,
@@ -139,16 +144,16 @@ def audio_band(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    c_air: meter_per_second = Quantity(343.0)   # speed of sound in air
+    c_air: meter_per_second = Quantity(343.0)  # speed of sound in air
 
-    f_a4: hertz = Quantity(440.0)               # A4 concert pitch
-    lam_a4: meter  = wavelength(c_air, f_a4)
-    T_a4: second   = period(f_a4)
+    f_a4: hertz = Quantity(440.0)  # A4 concert pitch
+    lam_a4: meter = wavelength(c_air, f_a4)
+    T_a4: second = period(f_a4)
 
     print(f"A4 (440 Hz) wavelength: {lam_a4.value:.4f} m")
     print(f"A4 period:              {T_a4.value * 1000:.4f} ms")
 
-    f_low: hertz  = Quantity(20.0)
+    f_low: hertz = Quantity(20.0)
     f_high: hertz = Quantity(20_000.0)
     for f_val in [5.0, 1000.0, 50_000.0]:
         f: hertz = Quantity(f_val)
@@ -156,12 +161,16 @@ if __name__ == "__main__":
         print(f"  {f_val:8.0f} Hz  →  {band}")
 
     L_pipe: meter = Quantity(0.5)
-    print("\nHarmonics for 0.5 m open pipe (Hz):",
-          harmonic_frequencies(c_air, L_pipe, n_max=5, closed_end=False))
-    print("Harmonics for 0.5 m closed pipe (Hz):",
-          harmonic_frequencies(c_air, L_pipe, n_max=5, closed_end=True))
+    print(
+        "\nHarmonics for 0.5 m open pipe (Hz):",
+        harmonic_frequencies(c_air, L_pipe, n_max=5, closed_end=False),
+    )
+    print(
+        "Harmonics for 0.5 m closed pipe (Hz):",
+        harmonic_frequencies(c_air, L_pipe, n_max=5, closed_end=True),
+    )
 
-    L_open: meter   = resonant_length(c_air, f_a4, n=1, closed_end=False)
+    L_open: meter = resonant_length(c_air, f_a4, n=1, closed_end=False)
     L_closed: meter = resonant_length(c_air, f_a4, n=1, closed_end=True)
     print(f"\nOpen pipe  (1st harmonic, A4): {L_open.value:.4f} m")
     print(f"Closed pipe (1st harmonic, A4): {L_closed.value:.4f} m")
@@ -169,6 +178,6 @@ if __name__ == "__main__":
     f_beat: hertz = beat_frequency(Quantity(440.0), Quantity(441.5))
     print(f"\nBeat frequency (440 vs 441.5 Hz): {f_beat.value} Hz")
 
-    v_src: meter_per_second = Quantity(34.3)    # source at 10% of sound speed
+    v_src: meter_per_second = Quantity(34.3)  # source at 10% of sound speed
     f_obs: hertz = doppler_observed(f_a4, c_air, v_src)
     print(f"Doppler (source receding at 34.3 m/s): {f_obs.value:.1f} Hz")
