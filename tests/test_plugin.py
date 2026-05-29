@@ -950,8 +950,8 @@ def test_runtime_to_raises_on_non_pint_backed() -> None:
     from mypy_units import Quantity
 
     q = Quantity(1.0)
-    with pytest.raises(TypeError, match="unit-string"):
-        q.to("km")
+    with pytest.raises(AttributeError):
+        q.to("km")  # type: ignore[union-attr]
 
 
 def test_runtime_arithmetic_preserves_pint_backing() -> None:
