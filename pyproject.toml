@@ -84,3 +84,8 @@ source = ["mypy_units"]
 
 [tool.coverage.report]
 show_missing = true
+
+[dependency-groups]
+dev = [
+    "jax>=0.10.1",
+]

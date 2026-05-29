@@ -81,13 +81,13 @@ print(f"pressure: {p} Pa,  force: {f} N")
 
 d_arr: Array[meter] = QuantityArray(np.array([10.0, 20.0, 30.0]))
 t_arr: Array[second] = QuantityArray(np.array([2.0, 4.0, 5.0]))
-print(f"array speeds:  {speed_arr(d_arr, t_arr).value}")
-print(f"array accels:  {accel2_arr(d_arr, t_arr).value}")
+print(f"array speeds:  {speed_arr(d_arr, t_arr)}")
+print(f"array accels:  {accel2_arr(d_arr, t_arr)}")
 
 # sqrt: recover Array[meter] from Array[square_meter]
 area_arr: Array[square_meter] = QuantityArray(np.array([4.0, 9.0, 16.0]))
 side_arr: Array[meter] = np.sqrt(area_arr)
-print(f"side lengths:  {side_arr.value}")
+print(f"side lengths:  {side_arr}")
 
 # sqrt on a scalar square_meter quantity
 area_scalar: square_meter = Quantity(9.0)

@@ -2,102 +2,90 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
-
-if TYPE_CHECKING:
-    import numpy as np
+from typing import Any, Generic, TypeVar
 
 _Q_co = TypeVar("_Q_co", covariant=True)
 
 
 class QuantityArray(Generic[_Q_co]):
-    """numpy array annotated with a physical unit.
+    """Unit annotation carrier for arrays.
+
+    At runtime ``QuantityArray(value)`` returns the underlying array
+    **unchanged** — a plain ``numpy.ndarray`` (or any array that already
+    carries a ``dtype``, such as a JAX array or a JAX tracer).  No wrapper
+    object is created; all dimension tracking happens at static-analysis
+    time via the mypy plugin.
 
     The type parameter is a unit alias (e.g. ``meter``, ``second``)::
 
         d: Array[meter] = QuantityArray(np.array([1.0, 2.0, 3.0]))
+        # type(d) is numpy.ndarray
 
-    The underlying ndarray dtype must be numeric (floating or integer);
-    a :class:`TypeError` is raised on construction otherwise.
+    Transparency makes the value directly consumable by accelerators such as
+    JAX: an array passed in is returned as-is (never copied or concretized),
+    so it can flow through ``jax.jit`` traces untouched.
+
+    The underlying dtype must be numeric (floating or integer); a
+    :class:`TypeError` is raised on construction otherwise.  The dtype is
+    inspected without materializing the array, so the check is safe on JAX
+    tracers.
     """
 
-    _value: Any
+    __slots__ = ()
 
-    def __init__(self, value: Any) -> None:
+    def __new__(cls, value: Any) -> QuantityArray[Any]:
         import numpy as _np
 
-        arr = _np.asarray(value)
+        # Leave anything that already exposes a dtype untouched (ndarray,
+        # JAX array, JAX tracer).  Only promote plain sequences/scalars.
+        arr = value if hasattr(value, "dtype") else _np.asarray(value)
         if not _np.issubdtype(arr.dtype, _np.number):
             raise TypeError(f"QuantityArray dtype must be numeric (float or int), got {arr.dtype}")
-        self._value = arr
-
-    @property
-    def value(self) -> Any:
-        return self._value
-
-    def __repr__(self) -> str:
-        return f"QuantityArray({self._value!r})"
-
-    def _v(self, other: Any) -> Any:
-        return other._value if isinstance(other, QuantityArray) else other
+        return arr  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
-    # Arithmetic — delegates to the wrapped ndarray; plugin hooks track
-    # the dimension of each result at static analysis time.
+    # Arithmetic method declarations — kept as mypy plugin hook attachment
+    # points so hooks registered on QuantityArray.__truediv__ etc. fire when
+    # the static type of an operand is QuantityArray[...].  Bodies are
+    # unreachable at runtime: QuantityArray() returns a plain array, so Python
+    # always dispatches to the array's own arithmetic, never to these methods.
     # ------------------------------------------------------------------
 
     def __add__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._value + self._v(other))
+        raise NotImplementedError
 
     def __radd__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._v(other) + self._value)
+        raise NotImplementedError
 
     def __sub__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._value - self._v(other))
+        raise NotImplementedError
 
     def __rsub__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._v(other) - self._value)
+        raise NotImplementedError
 
     def __mul__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._value * self._v(other))
+        raise NotImplementedError
 
     def __rmul__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._v(other) * self._value)
+        raise NotImplementedError
 
     def __truediv__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._value / self._v(other))
+        raise NotImplementedError
 
     def __rtruediv__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._v(other) / self._value)
+        raise NotImplementedError
 
     def __floordiv__(self, other: Any) -> QuantityArray[Any]:
-        return QuantityArray(self._value // self._v(other))
+        raise NotImplementedError
 
     def __pow__(self, exp: int | float, mod: None = None) -> QuantityArray[Any]:
-        return QuantityArray(self._value**exp)
+        raise NotImplementedError
 
     def __neg__(self) -> QuantityArray[Any]:
-        return QuantityArray(-self._value)
+        raise NotImplementedError
 
     def __pos__(self) -> QuantityArray[Any]:
-        return QuantityArray(+self._value)
+        raise NotImplementedError
 
     def __abs__(self) -> QuantityArray[Any]:
-        return QuantityArray(abs(self._value))
-
-    # ------------------------------------------------------------------
-    # NumPy integration — intercept ufuncs so numpy operations on
-    # QuantityArray objects work correctly at runtime.
-    # ------------------------------------------------------------------
-
-    def __array__(self, dtype: Any = None) -> np.ndarray[Any, np.dtype[Any]]:
-        import numpy as _np
-
-        return _np.asarray(self._value, dtype=dtype)
-
-    def __array_ufunc__(self, ufunc: Any, method: str, *inputs: Any, **kwargs: Any) -> Any:
-        raw = [x._value if isinstance(x, QuantityArray) else x for x in inputs]
-        result = getattr(ufunc, method)(*raw, **kwargs)
-        if isinstance(result, tuple):
-            return tuple(QuantityArray(r) for r in result)
-        return QuantityArray(result)
+        raise NotImplementedError

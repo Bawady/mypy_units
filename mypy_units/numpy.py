@@ -13,8 +13,10 @@ dimensionality::
     def side(a: Array[square_meter]) -> Array[meter]:
         return sqrt(a)                  # ([length]**2)**(1/2) = [length]  ✓
 
-The wrappers ensure that runtime numpy operations receive the underlying
-numeric value (float or ndarray) rather than the wrapper object.
+At runtime ``Quantity`` and ``QuantityArray`` values are already plain
+primitives (``float`` / ``ndarray``), so these wrappers simply forward to
+the corresponding numpy ufunc.  The dimension of the result is tracked
+purely at static-analysis time by the mypy plugin.
 """
 
 from __future__ import annotations
@@ -39,9 +41,8 @@ def power(
     The mypy plugin tracks the resulting dimension: ``[length] ** 2``,
     ``[time] ** (1/2)``, etc.
     """
-    v = base._value if hasattr(base, "_value") else base
-    result = np.power(v, exp)
-    return QuantityArray(result) if isinstance(base, QuantityArray) else Quantity(result)  # type: ignore[arg-type]
+    v: Any = base  # runtime value is already a plain float/ndarray
+    return np.power(v, exp)  # type: ignore[no-any-return]
 
 
 @overload
@@ -56,9 +57,8 @@ def sqrt(
     Equivalent to ``power(x, 0.5)``.  The plugin computes the result
     dimension as ``dim ** (1/2)``.
     """
-    v = x._value if hasattr(x, "_value") else x
-    result = np.sqrt(v)
-    return QuantityArray(result) if isinstance(x, QuantityArray) else Quantity(result)  # type: ignore[arg-type]
+    v: Any = x  # runtime value is already a plain float/ndarray
+    return np.sqrt(v)  # type: ignore[no-any-return]
 
 
 @overload
@@ -73,6 +73,5 @@ def cbrt(
     Equivalent to ``power(x, 1/3)``.  The plugin computes the result
     dimension as ``dim ** (1/3)``.
     """
-    v = x._value if hasattr(x, "_value") else x
-    result = np.cbrt(v)
-    return QuantityArray(result) if isinstance(x, QuantityArray) else Quantity(result)  # type: ignore[arg-type]
+    v: Any = x  # runtime value is already a plain float/ndarray
+    return np.cbrt(v)  # type: ignore[no-any-return]

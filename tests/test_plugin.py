@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 
 def no_error(output: str) -> None:
@@ -418,8 +419,9 @@ def test_array_accepts_float64_dtype() -> None:
 
     from mypy_units import QuantityArray
 
-    arr = QuantityArray(np.array([1.0, 2.0, 3.0]))
-    assert arr.value.dtype == np.float64
+    # QuantityArray() returns the array unchanged at runtime (a plain ndarray).
+    arr: Any = QuantityArray(np.array([1.0, 2.0, 3.0]))
+    assert arr.dtype == np.float64
 
 
 def test_array_accepts_integer_dtype() -> None:
@@ -427,8 +429,72 @@ def test_array_accepts_integer_dtype() -> None:
 
     from mypy_units import QuantityArray
 
-    arr = QuantityArray(np.array([1, 2, 3]))
-    assert np.issubdtype(arr.value.dtype, np.integer)
+    arr: Any = QuantityArray(np.array([1, 2, 3]))
+    assert np.issubdtype(arr.dtype, np.integer)
+
+
+# ---------------------------------------------------------------------------
+# Runtime: QuantityArray is transparent — returns the underlying array
+# unchanged, which keeps it usable inside jax.jit / jax.grad traces.
+# ---------------------------------------------------------------------------
+
+
+def test_array_is_transparent_returns_input_unchanged() -> None:
+    import numpy as np
+
+    from mypy_units import QuantityArray
+
+    src = np.array([1.0, 2.0, 3.0])
+    # An object already carrying a dtype is returned as-is (no copy, no wrapper).
+    assert QuantityArray(src) is src
+
+
+def test_jax_array_passthrough_identity() -> None:
+    import pytest
+
+    jnp = pytest.importorskip("jax.numpy")
+
+    from mypy_units import QuantityArray
+
+    x = jnp.array([1.0, 2.0, 3.0])
+    # JAX array is returned unchanged (never concretized to numpy).
+    assert QuantityArray(x) is x
+
+
+def test_jax_jit_constructs_quantityarray_on_tracer() -> None:
+    import pytest
+
+    jax = pytest.importorskip("jax")
+    jnp = pytest.importorskip("jax.numpy")
+    import numpy as np
+
+    from mypy_units import QuantityArray
+
+    @jax.jit
+    def speed(d: Any, t: Any) -> Any:
+        # QuantityArray() is called on JAX tracers during the trace; it must
+        # return them unchanged so division stays a traced operation.
+        return QuantityArray(d) / QuantityArray(t)
+
+    out = speed(jnp.array([10.0, 20.0]), jnp.array([2.0, 5.0]))
+    np.testing.assert_allclose(np.asarray(out), [5.0, 4.0])
+
+
+def test_jax_grad_through_quantityarray() -> None:
+    import pytest
+
+    jax = pytest.importorskip("jax")
+    jnp = pytest.importorskip("jax.numpy")
+    import numpy as np
+
+    from mypy_units import QuantityArray
+
+    def speed0(d: Any) -> Any:
+        v: Any = QuantityArray(d) / QuantityArray(jnp.array([2.0, 5.0]))
+        return v[0]
+
+    g = jax.grad(speed0)(jnp.array([10.0, 20.0]))
+    np.testing.assert_allclose(np.asarray(g), [0.5, 0.0])
 
 
 # ---------------------------------------------------------------------------
