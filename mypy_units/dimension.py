@@ -286,7 +286,13 @@ def parse_base_literal(canonical: str) -> Any:
     legacy ``:.15g`` float format.
     """
     m = _CANON_COEFF.match(canonical)
-    if m:
+    # The leading integer is only a scale coefficient when a unit follows it.
+    # For inverse-unit canonicals like "1 / second" (hertz) the regex greedily
+    # grabs the "1" and leaves unit_part="/ second", which pint cannot parse on
+    # its own ("missing unary operator '/'").  In that case fall through and let
+    # pint parse the whole string — it handles the coefficient itself, e.g.
+    # "1 / second", "2 / second" and "1 / meter ** 2" all parse correctly.
+    if m and not m.group(3).lstrip().startswith("/"):
         num = int(m.group(1))
         den = int(m.group(2)) if m.group(2) else 1
         magnitude = num / den

@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import pytest
+
 
 def no_error(output: str) -> None:
     assert "Dimension mismatch" not in output, f"Unexpected error:\n{output}"
@@ -990,6 +992,51 @@ def test_to_chain_correct(mypy_fixture: Callable[[str], str]) -> None:
     no_error(out)
 
 
+# ---------------------------------------------------------------------------
+# 68. .to() result is tracked: a wrong downstream annotation is caught
+# (previously .to() returned Quantity[Any], so this slipped through).
+# ---------------------------------------------------------------------------
+def test_to_result_tracked_wrong_assignment(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        q = Quantity(3.6, "km/h")
+        x: kilogram = q.to("m/s")   # m/s tracked, assigned to kilogram
+    """)
+    assert "error:" in out, out
+
+
+# ---------------------------------------------------------------------------
+# 69. .to() across incompatible dimensions — pint raises at runtime; flagged.
+# ---------------------------------------------------------------------------
+def test_to_incompatible_dimension(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        bad = Quantity(5.0, "s").to("m")   # [time] -> [length]
+    """)
+    assert "Dimension mismatch in conversion" in out, out
+
+
+# ---------------------------------------------------------------------------
+# 70. .to() with an unknown unit string is reported.
+# ---------------------------------------------------------------------------
+def test_to_unknown_unit(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        q = Quantity(1.0, "m")
+        bad = q.to("florgle_xyz")
+    """)
+    assert "Unknown unit" in out, out
+
+
+# ---------------------------------------------------------------------------
+# 71. .to() escapes from an unknown (Quantity[Any]) receiver into a tracked
+# type — no dimension check is possible, but the result is anchored.
+# ---------------------------------------------------------------------------
+def test_to_escapes_from_any_receiver(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def g(x: Quantity) -> None:
+            y: meter_per_second = x.to("m/s")
+    """)
+    no_error(out)
+
+
 # ===========================================================================
 # Runtime: pint-backed Quantity mechanics
 # ===========================================================================
@@ -1028,3 +1075,229 @@ def test_runtime_arithmetic_preserves_pint_backing() -> None:
     v = d / t
     result = v.to("km/h")
     assert abs(float(result) - 12960.0) < 1e-6
+
+
+# ===========================================================================
+# Addition / subtraction operand compatibility
+#
+# Adding or subtracting quantities requires matching dimension AND scale; the
+# runtime values are bare floats, so mixing metres and kilometres is a real
+# numeric bug, not just a type nicety.
+# ===========================================================================
+
+
+def test_add_wrong_dimension(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def bad(d: meter, t: second) -> meter:
+            return d + t   # [length] + [time]
+    """)
+    has_mismatch(out)
+    assert "Dimension mismatch in addition" in out, out
+
+
+def test_sub_wrong_dimension(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def bad(d: meter, t: second) -> meter:
+            return d - t   # [length] - [time]
+    """)
+    has_mismatch(out)
+    assert "Dimension mismatch in subtraction" in out, out
+
+
+def test_add_scale_mismatch(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def bad(d: meter, k: kilometer) -> meter:
+            return d + k   # metre + kilometre: numerically wrong without conversion
+    """)
+    has_mismatch(out)
+    assert "Unit mismatch in addition" in out, out
+
+
+def test_add_same_dimension_ok(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def total(a: meter, b: meter) -> meter:
+            return a + b
+    """)
+    no_error(out)
+
+
+def test_sub_same_dimension_ok(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def diff(a: meter, b: meter) -> meter:
+            return a - b
+    """)
+    no_error(out)
+
+
+def test_add_plain_int_to_quantity_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    # Unlike multiplication, adding a bare scalar to a dimensioned quantity is
+    # nonsensical.  An int operand keeps the value a Quantity, so the plugin's
+    # __add__ hook fires and reports the dimension mismatch explicitly.
+    out = mypy_fixture("""
+        def shift(d: meter) -> meter:
+            return d + 1
+    """)
+    has_mismatch(out)
+    assert "Dimension mismatch in addition" in out, out
+
+
+def test_sub_plain_int_from_quantity_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def shift(d: meter) -> meter:
+            return d - 1
+    """)
+    has_mismatch(out)
+    assert "Dimension mismatch in subtraction" in out, out
+
+
+def test_add_plain_float_to_quantity_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    # A float operand is a special case: scalar Quantity subclasses float, so
+    # mypy resolves Quantity + float through float's own operator and the result
+    # collapses to a bare ``float`` (the unit is *erased*, never silently kept).
+    # That is still an error wherever a unit is expected — here, the return type.
+    out = mypy_fixture("""
+        def shift(d: meter) -> meter:
+            return d + 1.0
+    """)
+    assert "error:" in out, out
+    assert "Dimension mismatch" not in out  # caught as a return-value type error
+
+
+def test_add_scalar_to_dimensionless_ok(mypy_fixture: Callable[[str], str]) -> None:
+    # A dimensionless quantity (ratio, radian, …) may be combined with a scalar.
+    out = mypy_fixture("""
+        from mypy_units.units import dimensionless, radian
+        def bump(r: dimensionless) -> dimensionless:
+            return r + 1
+        def turn(a: radian) -> radian:
+            return a - 1
+    """)
+    no_error(out)
+
+
+def test_array_add_wrong_dimension(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def bad(d: Array[meter], t: Array[second]) -> Array[meter]:
+            return d + t
+    """)
+    has_mismatch(out)
+    assert "Dimension mismatch in addition" in out, out
+
+
+def test_array_add_same_dimension_ok(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def total(a: Array[meter], b: Array[meter]) -> Array[meter]:
+            return a + b
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# Bare Quantity(x) (no unit string) as an additive operand — a forgotten unit.
+# Its static type is only Quantity[Any], so detection is AST-based and limited
+# to inline constructor calls (a bare Quantity stored in a variable stays an
+# opaque Quantity[Any] escape hatch).
+# ---------------------------------------------------------------------------
+
+
+def test_sub_bare_quantity_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def shift(d: meter) -> meter:
+            return d - Quantity(1.0)
+    """)
+    has_mismatch(out)
+    assert "bare Quantity" in out, out
+
+
+def test_bare_quantity_reverse_order_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def shift(d: meter) -> meter:
+            return Quantity(1.0) - d
+    """)
+    has_mismatch(out)
+    assert "bare Quantity" in out, out
+
+
+def test_add_tagged_quantity_ok(mypy_fixture: Callable[[str], str]) -> None:
+    # A unit-tagged Quantity(value, "unit") is *not* bare — positional or keyword.
+    out = mypy_fixture("""
+        def shift(d: meter) -> meter:
+            return d + Quantity(1.0, "m")
+        def shift_kw(d: meter) -> meter:
+            return d + Quantity(1.0, unit="m")
+    """)
+    no_error(out)
+
+
+def test_dimensionless_bare_quantity_ok(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        from mypy_units.units import dimensionless
+        def bump(r: dimensionless) -> dimensionless:
+            return r + Quantity(1.0)
+    """)
+    no_error(out)
+
+
+# ===========================================================================
+# Canonical round-trip guard
+#
+# Every unit alias in mypy_units.units hard-codes a canonical literal string
+# (e.g. meter = Quantity[Literal["1000 meter"]]).  The plugin's arithmetic
+# hooks recompute canonicals via _fmt_canonical and mypy compares the result
+# Literal *string* structurally against the annotation.  If a hand-written
+# alias string differs from what the pipeline produces, an identity function
+# (foo -> foo) is wrongly rejected, or the value-based check silently no-ops.
+# This test pins every alias to the form the plugin actually produces, so any
+# future drift (or a newly added alias) fails loudly here instead of in users'
+# code.
+# ===========================================================================
+
+
+def _unit_aliases() -> list[tuple[str, str]]:
+    """Return (alias_name, declared_literal_string) for every unit alias."""
+    from typing import get_args
+
+    from mypy_units import units
+
+    out: list[tuple[str, str]] = []
+    for name in dir(units):
+        if name.startswith("_"):
+            continue
+        alias_args = get_args(getattr(units, name))
+        if not alias_args:
+            continue
+        literal_args = get_args(alias_args[0])  # unwrap Literal["..."]
+        if literal_args and isinstance(literal_args[0], str):
+            out.append((name, literal_args[0]))
+    return out
+
+
+def _plugin_canonical(literal: str) -> str:
+    """What the plugin computes for a value of this unit (see _canonical/_check)."""
+    from mypy_units.dimension import _fmt_canonical, parse_base_literal
+
+    base = parse_base_literal(literal).to_base_units()
+    return _fmt_canonical(float(base.magnitude), str(base.units))
+
+
+def test_unit_aliases_discovered() -> None:
+    # Guard against the introspection silently finding nothing.
+    assert len(_unit_aliases()) > 40
+
+
+@pytest.mark.parametrize(
+    ("name", "literal"), _unit_aliases(), ids=lambda v: v if isinstance(v, str) else ""
+)
+def test_alias_literal_is_canonical(name: str, literal: str) -> None:
+    """The declared alias string must equal the plugin-computed canonical.
+
+    Otherwise mypy's structural Literal comparison rejects identity functions
+    (foot -> foot) even though the dimensions match, and parse_base_literal may
+    fail to round-trip (the historical hertz "1 / second" bug).
+    """
+    computed = _plugin_canonical(literal)
+    assert computed == literal, (
+        f"Alias {name!r} declares Literal[{literal!r}] but the plugin computes "
+        f"{computed!r} for that unit. mypy compares these strings structurally, "
+        f"so they must match exactly. Update the alias in mypy_units/units.py."
+    )

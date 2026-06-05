@@ -25,6 +25,7 @@ from mypy.types import (
 
 from mypy_units.dimension import (
     _fmt_canonical,
+    canonical_dim_str,
     parse_base_literal,
     resolve,
     to_base_literal,
@@ -80,6 +81,19 @@ def _is_escape_hatch(tp: Type) -> bool:
     if isinstance(proper, Instance) and proper.type.fullname in _PLAIN_NUMERIC:
         return True
     return False
+
+
+def _is_plain_numeric(tp: Type) -> bool:
+    """True when *tp* is a bare float/int/complex — a unit-less scalar.
+
+    Distinct from :func:`_is_escape_hatch`, which also treats ``Any`` as opt-out.
+    A concrete numeric operand is *not* an escape hatch for addition: adding a
+    bare scalar to a dimensioned quantity is a dimension error.
+    """
+    proper = get_proper_type(tp)
+    if isinstance(proper, LiteralType):
+        proper = proper.fallback
+    return isinstance(proper, Instance) and proper.type.fullname in _PLAIN_NUMERIC
 
 
 def _canonical(q: Any) -> str:
@@ -258,18 +272,89 @@ def _get_scalefactor_from_op(ctx: MethodContext) -> float | None:
     return None
 
 
+def _report_addition_mismatch(
+    ctx: MethodContext,
+    op: str,
+    left_str: str,
+    right_str: str,
+    left_q: Any,
+    right_q: Any,
+) -> None:
+    """Flag adding/subtracting operands of differing dimension or scale.
+
+    Addition and subtraction require both operands to share the same physical
+    dimension *and* the same unit scale.  The runtime values are bare floats,
+    so numerically combining e.g. metres and kilometres without conversion is a
+    real bug, not just a type-level nicety — mirror the call-site checks in
+    :func:`_check_call`.
+    """
+    try:
+        ratio = (right_q / left_q).to_base_units()
+    except Exception:
+        return
+    verb = "addition" if op == "+" else "subtraction"
+    if ratio.dimensionality:
+        left_dim = resolve(left_str)
+        right_dim = resolve(right_str)
+        left_fmt = canonical_dim_str(left_dim) if left_dim is not None else left_str
+        right_fmt = canonical_dim_str(right_dim) if right_dim is not None else right_str
+        ctx.api.fail(
+            f"Dimension mismatch in {verb}: {left_fmt} {op} {right_fmt}",
+            ctx.context,
+        )
+    elif abs(float(ratio.magnitude) - 1.0) > _SCALE_EPSILON:
+        ctx.api.fail(
+            f"Unit mismatch in {verb}: {left_str!r} {op} {right_str!r}",
+            ctx.context,
+        )
+
+
+def _is_bare_quantity_call(node: object) -> bool:
+    """True when *node* is ``Quantity(x)`` with no unit string.
+
+    A unit-less construction has static type ``Quantity[Any]`` and carries no
+    dimensional information, so using it as an additive operand against a
+    dimensioned quantity is almost always a forgotten unit.  ``Quantity(1.0,
+    "m")`` / ``Quantity(1.0, unit="m")`` are *tagged* and return False.
+
+    Matching is by callee name (``NameExpr.fullname`` is not always resolved at
+    hook time), mirroring :func:`_get_scalefactor_value`.
+    """
+    if not isinstance(node, CallExpr):
+        return False
+    callee = node.callee
+    if not isinstance(callee, NameExpr) or callee.name != "Quantity":
+        return False
+    args, names = node.args, node.arg_names
+    # second positional arg (the unit) given as a string literal ⇒ tagged
+    if len(args) >= 2 and names[1] is None and isinstance(args[1], StrExpr):
+        return False
+    # unit="..." keyword ⇒ tagged
+    return not any(
+        nm == "unit" and isinstance(arg, StrExpr) for nm, arg in zip(names, args, strict=True)
+    )
+
+
+def _bare_quantity_in_op(ctx: MethodContext) -> bool:
+    """True when either operand of the current OpExpr is a bare ``Quantity(x)``."""
+    if not isinstance(ctx.context, OpExpr):
+        return False
+    return _is_bare_quantity_call(ctx.context.left) or _is_bare_quantity_call(ctx.context.right)
+
+
 def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
     def hook(ctx: MethodContext) -> Type:
         self_str = _unit_str(ctx.type)
-        if self_str is None:
-            return ctx.default_return_type  # type: ignore[return-value]
 
         if op == "unary":
+            if self_str is None:
+                return ctx.default_return_type  # type: ignore[return-value]
             result = _make_dim_type(ctx.type, self_str)
             return result if result is not None else ctx.default_return_type  # type: ignore[return-value]
 
         other_q = None
         other_tp: Type | None = None
+        other_str: str | None = None
 
         if ctx.arg_types and ctx.arg_types[0]:
             other_tp = ctx.arg_types[0][0]
@@ -280,10 +365,46 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
                 except Exception:
                     pass
 
+        # A bare ``Quantity(x)`` (no unit) used additively with a dimensioned
+        # operand is a forgotten unit.  Its static type is only ``Quantity[Any]``
+        # so detect it from the AST, handling either operand order (the bare side
+        # may be ``self``, which then has no unit string of its own).
+        if op in ("+", "-") and _bare_quantity_in_op(ctx):
+            known = self_str if self_str is not None else other_str
+            if known is not None:
+                try:
+                    if parse_base_literal(known).dimensionality:
+                        verb = "addition" if op == "+" else "subtraction"
+                        kdim = resolve(known)
+                        kfmt = canonical_dim_str(kdim) if kdim is not None else known
+                        ctx.api.fail(
+                            f"Dimension mismatch in {verb}: {kfmt} {op} dimensionless "
+                            f"(bare Quantity(...) carries no unit)",
+                            ctx.context,
+                        )
+                except Exception:
+                    pass
+
+        if self_str is None:
+            return ctx.default_return_type  # type: ignore[return-value]
+
         try:
             self_q = parse_base_literal(self_str)
 
             if op in ("+", "-"):
+                add_other_q = other_q
+                add_other_str = other_str
+                if add_other_q is None and other_tp is not None and _is_plain_numeric(other_tp):
+                    # A bare scalar acts as a dimensionless operand.  Unlike
+                    # multiplication (where a scalar legitimately rescales the
+                    # magnitude — "half of x"), adding/subtracting one to a
+                    # dimensioned quantity is a dimension error.  Adding it to a
+                    # dimensionless quantity (a ratio, radian, …) stays valid and
+                    # falls out cleanly below (ratio is unity, no error).
+                    add_other_q = parse_base_literal("dimensionless")
+                    add_other_str = "dimensionless"
+                if add_other_q is not None and add_other_str is not None:
+                    _report_addition_mismatch(ctx, op, self_str, add_other_str, self_q, add_other_q)
                 result_q = self_q
             elif op == "*":
                 if other_q is not None:
@@ -667,6 +788,64 @@ def _make_quantity_init_hook() -> Callable[[FunctionContext], Type]:
 
 _QUANTITY_INIT_HOOK = _make_quantity_init_hook()
 
+_TO_FULLNAME = f"{_QUANTITY_FULLNAME}.to"
+
+
+def _make_to_hook() -> Callable[[MethodContext], Type]:
+    """Hook ``q.to("unit")`` so the converted value is statically tracked.
+
+    pint performs the real conversion at runtime; the plugin anchors the static
+    type to ``Quantity[Literal["canonical(unit)"]]`` from the target string.
+    This turns ``.to()`` from an opaque ``Quantity[Any]`` escape hatch back into
+    a tracked value, so a wrong downstream annotation is caught.
+
+    When the receiver's unit is statically known, a conversion across
+    *incompatible* dimensions is reported — pint raises ``DimensionalityError``
+    for it at runtime, so it can never succeed.
+    """
+
+    def hook(ctx: MethodContext) -> Type:
+        if not isinstance(ctx.context, CallExpr) or not ctx.context.args:
+            return ctx.default_return_type  # type: ignore[return-value]
+        arg = ctx.context.args[0]
+        if not isinstance(arg, StrExpr):
+            return ctx.default_return_type  # type: ignore[return-value]
+        try:
+            canonical = to_base_literal(arg.value)
+        except Exception:
+            ctx.api.fail(f"Unknown unit: {arg.value!r}", ctx.context)
+            return AnyType(TypeOfAny.from_error)
+
+        recv_str = _unit_str(ctx.type)
+        if recv_str is not None:
+            try:
+                ratio = (
+                    parse_base_literal(canonical) / parse_base_literal(recv_str)
+                ).to_base_units()
+            except Exception:
+                ratio = None
+            if ratio is not None and ratio.dimensionality:
+                recv_dim = resolve(recv_str)
+                tgt_dim = resolve(canonical)
+                recv_fmt = canonical_dim_str(recv_dim) if recv_dim is not None else recv_str
+                tgt_fmt = canonical_dim_str(tgt_dim) if tgt_dim is not None else canonical
+                ctx.api.fail(
+                    f"Dimension mismatch in conversion: cannot convert {recv_fmt} to {tgt_fmt}",
+                    ctx.context,
+                )
+
+        proper = get_proper_type(ctx.default_return_type)
+        if not isinstance(proper, Instance):
+            return ctx.default_return_type  # type: ignore[return-value]
+        str_type = ctx.api.named_generic_type("builtins.str", [])
+        lit = LiteralType(value=canonical, fallback=str_type)
+        return proper.copy_modified(args=[lit])
+
+    return hook
+
+
+_TO_HOOK = _make_to_hook()
+
 
 # ---------------------------------------------------------------------------
 # Plugin
@@ -698,6 +877,8 @@ class PintUnitsPlugin(Plugin):
             return _ARITH_HOOKS[fullname]
         if fullname in _NUMPY_UFUNC_HOOKS:
             return _NUMPY_UFUNC_HOOKS[fullname]
+        if fullname == _TO_FULLNAME:
+            return _TO_HOOK
         return _make_method_hook(fullname)
 
 

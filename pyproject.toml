@@ -59,6 +59,12 @@ disable_error_code = ["type-arg"]
 module = ["pintrs"]
 ignore_missing_imports = true
 
+# scipy ships no type information (no py.typed); the mypy_units.scipy wrappers
+# route results through Any, so missing stubs are expected and harmless.
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
