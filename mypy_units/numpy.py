@@ -75,3 +75,33 @@ def cbrt(
     """
     v: Any = x  # runtime value is already a plain float/ndarray
     return np.cbrt(v)  # type: ignore[no-any-return]
+
+
+@overload
+def max(x: Quantity[Any]) -> Quantity[Any]: ...
+@overload
+def max(x: QuantityArray[Any]) -> Quantity[Any]: ...
+def max(x: Quantity[Any] | QuantityArray[Any]) -> Quantity[Any]:
+    """Maximum of a dimensioned array, reduced to a scalar of the same unit.
+
+    Mirrors :func:`numpy.max` for the common whole-array reduction: the plugin
+    types the result as a scalar ``Quantity`` carrying the element unit of *x*
+    (``min``/``max`` preserve dimension).  For an axis-wise reduction — whose
+    result is an array, not a scalar — call :func:`numpy.max` directly.
+    """
+    v: Any = x  # runtime value is already a plain float/ndarray
+    return np.max(v)  # type: ignore[no-any-return]
+
+
+@overload
+def min(x: Quantity[Any]) -> Quantity[Any]: ...
+@overload
+def min(x: QuantityArray[Any]) -> Quantity[Any]: ...
+def min(x: Quantity[Any] | QuantityArray[Any]) -> Quantity[Any]:
+    """Minimum of a dimensioned array, reduced to a scalar of the same unit.
+
+    Mirrors :func:`numpy.min` for the common whole-array reduction; see
+    :func:`max` for the dimension and shape semantics.
+    """
+    v: Any = x  # runtime value is already a plain float/ndarray
+    return np.min(v)  # type: ignore[no-any-return]

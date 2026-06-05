@@ -4,7 +4,17 @@ from collections.abc import Callable
 from fractions import Fraction
 from typing import Any
 
-from mypy.nodes import CallExpr, FloatExpr, FuncDef, IntExpr, MypyFile, NameExpr, OpExpr, StrExpr
+from mypy.nodes import (
+    CallExpr,
+    FloatExpr,
+    FuncDef,
+    IntExpr,
+    MypyFile,
+    NameExpr,
+    OpExpr,
+    StrExpr,
+    UnaryExpr,
+)
 from mypy.plugin import (
     AnalyzeTypeContext,
     FunctionContext,
@@ -94,6 +104,42 @@ def _is_plain_numeric(tp: Type) -> bool:
     if isinstance(proper, LiteralType):
         proper = proper.fallback
     return isinstance(proper, Instance) and proper.type.fullname in _PLAIN_NUMERIC
+
+
+def _is_unknown_unit_carrier(tp: Type) -> bool:
+    """True when *tp* is a ``Quantity``/``QuantityArray`` with no resolvable unit.
+
+    These are ``Quantity[Any]`` / ``QuantityArray[Any]`` values: a unit carrier
+    whose dimension is statically unknown.  Arithmetic involving one cannot be
+    dimension-checked, so the plugin reports it rather than silently passing.
+    A plain scalar (``float``/``int``) is *not* a carrier and is unaffected.
+    """
+    proper = get_proper_type(tp)
+    if not isinstance(proper, Instance):
+        return False
+    if proper.type.fullname not in (_QUANTITY_FULLNAME, _ARRAY_FULLNAME):
+        return False
+    return _unit_str(tp) is None
+
+
+_OP_VERB: dict[str, str] = {
+    "+": "addition",
+    "-": "subtraction",
+    "*": "multiplication",
+    "/": "division",
+    "/r": "division",
+}
+
+
+def _report_unknown_unit(ctx: MethodContext, op: str) -> None:
+    """Flag an operand whose unit is statically unknown (``Quantity[Any]``)."""
+    verb = _OP_VERB.get(op, "exponentiation" if op == "**" else "arithmetic")
+    ctx.api.fail(
+        f"Operand with unknown unit (Quantity[Any]) in {verb}: its dimension "
+        f"cannot be tracked statically — annotate it, or set its unit via "
+        f"Quantity(value, 'unit') or .to('unit')",
+        ctx.context,
+    )
 
 
 def _canonical(q: Any) -> str:
@@ -230,46 +276,103 @@ def _callee_callable(ctx: FunctionContext | MethodContext, fullname: str) -> Cal
 # ---------------------------------------------------------------------------
 
 
-def _get_scalefactor_value(node: object) -> float | None:
-    """Extract the scalar from a ``ScaleFactor(x)`` AST call node.
+def _fold_numeric_literal(node: object) -> float | None:
+    """Statically evaluate a numeric-literal AST expression to a float.
 
-    Returns the numeric value when *node* is ``ScaleFactor(<literal>)``,
-    otherwise returns ``None``.  Both int and float literals are accepted;
-    zero is rejected (undefined conversion).
+    Accepts plain int/float literals, unary ``+``/``-``, and arithmetic
+    (``+ - * / **``) over them, so deliberate self-documenting factors such
+    as ``ScaleFactor(1000 / 3600)`` work as written.  Returns ``None`` for
+    anything not statically evaluable (a variable, a function call, …).
+    """
+    if isinstance(node, IntExpr):
+        return float(node.value)
+    if isinstance(node, FloatExpr):
+        return float(node.value)
+    if isinstance(node, UnaryExpr):
+        operand = _fold_numeric_literal(node.expr)
+        if operand is None:
+            return None
+        if node.op == "-":
+            return -operand
+        if node.op == "+":
+            return operand
+        return None
+    if isinstance(node, OpExpr):
+        left = _fold_numeric_literal(node.left)
+        right = _fold_numeric_literal(node.right)
+        if left is None or right is None:
+            return None
+        try:
+            if node.op == "+":
+                return left + right
+            if node.op == "-":
+                return left - right
+            if node.op == "*":
+                return left * right
+            if node.op == "/":
+                return left / right
+            if node.op == "**":
+                return float(left**right)
+        except (ZeroDivisionError, OverflowError, ValueError):
+            return None
+    return None
+
+
+def _get_scalefactor_value(node: object) -> tuple[bool, float | None]:
+    """Inspect an AST node for a ``ScaleFactor(x)`` call.
+
+    Returns ``(is_scalefactor, value)``:
+
+    * ``(False, None)`` — *node* is not a ``ScaleFactor(...)`` call.
+    * ``(True, k)``     — a ``ScaleFactor`` whose argument statically folds
+      to the non-zero float ``k``.
+    * ``(True, None)``  — a ``ScaleFactor`` whose argument could not be
+      evaluated statically (a variable, a call, …) or folded to zero.  The
+      caller must reject this rather than silently dropping the factor — a
+      silently-ignored conversion defeats the point of writing it explicitly.
     """
     if not isinstance(node, CallExpr):
-        return None
+        return (False, None)
     callee = node.callee
     # Match by name; a fully-qualified check would be more robust but
     # NameExpr.fullname is not always resolved at hook call time.
     if not isinstance(callee, NameExpr) or callee.name != "ScaleFactor":
-        return None
+        return (False, None)
     if not node.args:
-        return None
-    arg = node.args[0]
-    if isinstance(arg, IntExpr):
-        v = float(arg.value)
-        return v if v != 0.0 else None
-    if isinstance(arg, FloatExpr):
-        v = float(arg.value)
-        return v if v != 0.0 else None
-    return None
+        return (True, None)
+    value = _fold_numeric_literal(node.args[0])
+    if value is None or value == 0.0:
+        return (True, None)
+    return (True, value)
 
 
-def _get_scalefactor_from_op(ctx: MethodContext) -> float | None:
+def _get_scalefactor_from_op(ctx: MethodContext) -> tuple[bool, float | None]:
     """Look for a ``ScaleFactor(x)`` call on either side of an OpExpr.
 
     Handles ``quantity * ScaleFactor(k)`` (k on right),
     ``ScaleFactor(k) * quantity`` via __rmul__ (k on left), and
-    ``quantity / ScaleFactor(k)`` (k on right).
+    ``quantity / ScaleFactor(k)`` (k on right).  Returns the
+    ``(is_scalefactor, value)`` status (see :func:`_get_scalefactor_value`)
+    of the first ``ScaleFactor`` operand found, or ``(False, None)`` when
+    neither side is one.
     """
     if not isinstance(ctx.context, OpExpr):
-        return None
+        return (False, None)
     for node in (ctx.context.left, ctx.context.right):
-        k = _get_scalefactor_value(node)
-        if k is not None:
-            return k
-    return None
+        found, value = _get_scalefactor_value(node)
+        if found:
+            return (found, value)
+    return (False, None)
+
+
+def _report_bad_scalefactor(ctx: MethodContext) -> None:
+    """Flag a ``ScaleFactor(...)`` whose argument cannot be tracked statically."""
+    ctx.api.fail(
+        "ScaleFactor(...) requires a statically evaluable numeric literal "
+        "(e.g. ScaleFactor(1000) or ScaleFactor(1000 / 3600)); a variable or "
+        "computed value cannot be tracked — inline the constant",
+        ctx.context,
+    )
 
 
 def _report_addition_mismatch(
@@ -309,39 +412,6 @@ def _report_addition_mismatch(
         )
 
 
-def _is_bare_quantity_call(node: object) -> bool:
-    """True when *node* is ``Quantity(x)`` with no unit string.
-
-    A unit-less construction has static type ``Quantity[Any]`` and carries no
-    dimensional information, so using it as an additive operand against a
-    dimensioned quantity is almost always a forgotten unit.  ``Quantity(1.0,
-    "m")`` / ``Quantity(1.0, unit="m")`` are *tagged* and return False.
-
-    Matching is by callee name (``NameExpr.fullname`` is not always resolved at
-    hook time), mirroring :func:`_get_scalefactor_value`.
-    """
-    if not isinstance(node, CallExpr):
-        return False
-    callee = node.callee
-    if not isinstance(callee, NameExpr) or callee.name != "Quantity":
-        return False
-    args, names = node.args, node.arg_names
-    # second positional arg (the unit) given as a string literal ⇒ tagged
-    if len(args) >= 2 and names[1] is None and isinstance(args[1], StrExpr):
-        return False
-    # unit="..." keyword ⇒ tagged
-    return not any(
-        nm == "unit" and isinstance(arg, StrExpr) for nm, arg in zip(names, args, strict=True)
-    )
-
-
-def _bare_quantity_in_op(ctx: MethodContext) -> bool:
-    """True when either operand of the current OpExpr is a bare ``Quantity(x)``."""
-    if not isinstance(ctx.context, OpExpr):
-        return False
-    return _is_bare_quantity_call(ctx.context.left) or _is_bare_quantity_call(ctx.context.right)
-
-
 def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
     def hook(ctx: MethodContext) -> Type:
         self_str = _unit_str(ctx.type)
@@ -365,25 +435,15 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
                 except Exception:
                     pass
 
-        # A bare ``Quantity(x)`` (no unit) used additively with a dimensioned
-        # operand is a forgotten unit.  Its static type is only ``Quantity[Any]``
-        # so detect it from the AST, handling either operand order (the bare side
-        # may be ``self``, which then has no unit string of its own).
-        if op in ("+", "-") and _bare_quantity_in_op(ctx):
-            known = self_str if self_str is not None else other_str
-            if known is not None:
-                try:
-                    if parse_base_literal(known).dimensionality:
-                        verb = "addition" if op == "+" else "subtraction"
-                        kdim = resolve(known)
-                        kfmt = canonical_dim_str(kdim) if kdim is not None else known
-                        ctx.api.fail(
-                            f"Dimension mismatch in {verb}: {kfmt} {op} dimensionless "
-                            f"(bare Quantity(...) carries no unit)",
-                            ctx.context,
-                        )
-                except Exception:
-                    pass
+        # Any operand whose unit is statically unknown (Quantity[Any]) — a bare
+        # Quantity(x), an unannotated value, an untyped helper return — makes the
+        # whole expression undecidable.  Flag it instead of silently passing.
+        # Handles either operand order (the unknown side may be ``self``).
+        if _is_unknown_unit_carrier(ctx.type) or (
+            other_tp is not None and _is_unknown_unit_carrier(other_tp)
+        ):
+            _report_unknown_unit(ctx, op)
+            return ctx.default_return_type  # type: ignore[return-value]
 
         if self_str is None:
             return ctx.default_return_type  # type: ignore[return-value]
@@ -415,7 +475,10 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
                     # Multiplying the VALUE by k converts to a k-times-smaller unit,
                     # preserving the physical quantity: (k·v) × (S/k) = v × S.
                     # Plain scalars (literals, variables) leave the unit unchanged.
-                    k = _get_scalefactor_from_op(ctx)
+                    found, k = _get_scalefactor_from_op(ctx)
+                    if found and k is None:
+                        _report_bad_scalefactor(ctx)
+                        return ctx.default_return_type  # type: ignore[return-value]
                     result_q = self_q / k if k is not None else self_q
             elif op == "/":
                 if other_q is not None:
@@ -425,7 +488,10 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
                     # Quantity / ScaleFactor(k).
                     # Dividing the VALUE by k converts to a k-times-larger unit:
                     # (v/k) × (S·k) = v × S.
-                    k = _get_scalefactor_from_op(ctx)
+                    found, k = _get_scalefactor_from_op(ctx)
+                    if found and k is None:
+                        _report_bad_scalefactor(ctx)
+                        return ctx.default_return_type  # type: ignore[return-value]
                     result_q = self_q * k if k is not None else self_q
             elif op == "/r":
                 if other_q is not None:
@@ -457,6 +523,9 @@ def _make_arith_hook(op: str) -> Callable[[MethodContext], Type]:
 def _make_pow_hook() -> Callable[[MethodContext], Type]:
     def hook(ctx: MethodContext) -> Type:
         self_str = _unit_str(ctx.type)
+        if _is_unknown_unit_carrier(ctx.type):
+            _report_unknown_unit(ctx, "**")
+            return ctx.default_return_type  # type: ignore[return-value]
         if self_str is None:
             return ctx.default_return_type  # type: ignore[return-value]
 
@@ -619,10 +688,40 @@ def _make_numpy_unary_dim_hook(exp: Fraction) -> Callable[[FunctionContext], Typ
     return hook
 
 
+def _make_numpy_reduce_hook() -> Callable[[FunctionContext], Type]:
+    """Hook for whole-array reductions (``min``/``max``).
+
+    These preserve the physical dimension and collapse a ``QuantityArray`` to a
+    scalar ``Quantity`` of the same unit.  The result is exactly the array's
+    element type, so the inner ``Quantity`` instance is reused as-is (avoiding a
+    fresh ``named_generic_type`` lookup, which is unsafe for non-builtin names).
+    """
+
+    def hook(ctx: FunctionContext) -> Type:
+        if not ctx.arg_types or not ctx.arg_types[0]:
+            return ctx.default_return_type  # type: ignore[return-value]
+        arg_tp = get_proper_type(ctx.arg_types[0][0])
+        if not isinstance(arg_tp, Instance):
+            return ctx.default_return_type  # type: ignore[return-value]
+        # Scalar Quantity in → same scalar out (degenerate reduction).
+        if arg_tp.type.fullname == _QUANTITY_FULLNAME:
+            return arg_tp
+        # QuantityArray[Quantity[...]] in → its element Quantity[...] out.
+        if arg_tp.type.fullname == _ARRAY_FULLNAME and arg_tp.args:
+            inner = get_proper_type(arg_tp.args[0])
+            if isinstance(inner, Instance) and inner.type.fullname == _QUANTITY_FULLNAME:
+                return inner
+        return ctx.default_return_type  # type: ignore[return-value]
+
+    return hook
+
+
 _NUMPY_FUNCTION_HOOKS: dict[str, Callable[[FunctionContext], Type]] = {
     f"{_NUMPY_MOD}.power": _make_numpy_power_hook(),
     f"{_NUMPY_MOD}.sqrt": _make_numpy_unary_dim_hook(Fraction(1, 2)),
     f"{_NUMPY_MOD}.cbrt": _make_numpy_unary_dim_hook(Fraction(1, 3)),
+    f"{_NUMPY_MOD}.max": _make_numpy_reduce_hook(),
+    f"{_NUMPY_MOD}.min": _make_numpy_reduce_hook(),
 }
 
 # ---------------------------------------------------------------------------

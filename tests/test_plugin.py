@@ -592,6 +592,69 @@ def test_np_sqrt_direct_wrong(mypy_fixture: Callable[[str], str]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 24a. max(array) reduces to a scalar of the same unit
+# ---------------------------------------------------------------------------
+def test_numpy_max_array_to_scalar(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        from mypy_units.numpy import max as amax
+        def hottest(speeds: Array[meter_per_second]) -> meter_per_second:
+            return amax(speeds)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 24b. min(array) reduces to a scalar of the same unit
+# ---------------------------------------------------------------------------
+def test_numpy_min_array_to_scalar(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        from mypy_units.numpy import min as amin
+        def slowest(speeds: Array[meter_per_second]) -> meter_per_second:
+            return amin(speeds)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 24c. max(array) with a wrong-unit return annotation — caught
+# ---------------------------------------------------------------------------
+def test_numpy_max_wrong_unit(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        from mypy_units.numpy import max as amax
+        def bad(speeds: Array[meter_per_second]) -> second:
+            return amax(speeds)
+    """)
+    assert "error:" in out
+    assert "return-value" in out or "Incompatible return value" in out
+
+
+# ---------------------------------------------------------------------------
+# 24d. max() result is a scalar Quantity, not a QuantityArray
+# ---------------------------------------------------------------------------
+def test_numpy_max_result_is_scalar(mypy_fixture: Callable[[str], str]) -> None:
+    # Returning the scalar where an Array is expected must be rejected: the
+    # reduction collapses the array dimension.
+    out = mypy_fixture("""
+        from mypy_units.numpy import max as amax
+        def bad(speeds: Array[meter_per_second]) -> Array[meter_per_second]:
+            return amax(speeds)
+    """)
+    assert "error:" in out
+
+
+# ---------------------------------------------------------------------------
+# 24e. max() tracks a compound unit built by arithmetic
+# ---------------------------------------------------------------------------
+def test_numpy_max_compound_unit(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        from mypy_units.numpy import max as amax
+        def peak(d: meter, ts: QuantityArray[second]) -> meter_per_second:
+            return amax(d / ts)
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
 # 35. ScaleFactor: 3.6 * (m/s) → km/h — accepted
 # ---------------------------------------------------------------------------
 def test_conversion_factor_mul_correct(mypy_fixture: Callable[[str], str]) -> None:
@@ -744,6 +807,66 @@ def test_cf_unit_reassign_wrong_factor(mypy_fixture: Callable[[str], str]) -> No
         d_km: kilometer = d_m / ScaleFactor(100)   # 100 ≠ 1000
     """)
     assert "error:" in out
+
+
+# ---------------------------------------------------------------------------
+# 47a. ScaleFactor with a folded literal-arithmetic argument — accepted
+# ---------------------------------------------------------------------------
+def test_cf_folds_literal_arithmetic(mypy_fixture: Callable[[str], str]) -> None:
+    # km/h has scale 5/18 m/s; 1000/3600 == 5/18, so the value is rescaled to
+    # plain meter/second.  The deliberate, self-documenting 1000 / 3600 form
+    # must be statically folded rather than dropped.
+    out = mypy_fixture("""
+        def to_ms(v: kilometer_per_hour) -> meter_per_second:
+            return ScaleFactor(1000 / 3600) * v
+    """)
+    no_error(out)
+
+
+# ---------------------------------------------------------------------------
+# 47b. ScaleFactor with a folded literal that is WRONG — still rejected
+# ---------------------------------------------------------------------------
+def test_cf_folds_literal_arithmetic_wrong(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def to_ms(v: kilometer_per_hour) -> meter_per_second:
+            return ScaleFactor(1000 / 360) * v   # 10x off
+    """)
+    assert "error:" in out
+
+
+# ---------------------------------------------------------------------------
+# 47c. ScaleFactor(<variable>) cannot be tracked — flagged (fail closed)
+# ---------------------------------------------------------------------------
+def test_cf_non_literal_variable_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        k = 1000.0
+        def to_km(d: meter) -> kilometer:
+            return d / ScaleFactor(k)
+    """)
+    assert "ScaleFactor(...) requires a statically evaluable numeric literal" in out
+
+
+# ---------------------------------------------------------------------------
+# 47d. ScaleFactor(<call result>) cannot be tracked — flagged (fail closed)
+# ---------------------------------------------------------------------------
+def test_cf_non_literal_call_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def factor() -> float: ...
+        def to_km(d: meter) -> kilometer:
+            return d / ScaleFactor(factor())
+    """)
+    assert "ScaleFactor(...) requires a statically evaluable numeric literal" in out
+
+
+# ---------------------------------------------------------------------------
+# 47e. ScaleFactor(0) — undefined conversion, flagged (fail closed)
+# ---------------------------------------------------------------------------
+def test_cf_zero_rejected(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def to_km(d: meter) -> kilometer:
+            return d / ScaleFactor(0)
+    """)
+    assert "ScaleFactor(...) requires a statically evaluable numeric literal" in out
 
 
 # ===========================================================================
@@ -1193,47 +1316,84 @@ def test_array_add_same_dimension_ok(mypy_fixture: Callable[[str], str]) -> None
 
 
 # ---------------------------------------------------------------------------
-# Bare Quantity(x) (no unit string) as an additive operand — a forgotten unit.
-# Its static type is only Quantity[Any], so detection is AST-based and limited
-# to inline constructor calls (a bare Quantity stored in a variable stays an
-# opaque Quantity[Any] escape hatch).
+# Quantity[Any] operands in arithmetic — a unit carrier whose dimension is
+# statically unknown (bare Quantity(x), an unannotated value, an untyped helper
+# return).  Such an operand makes the whole expression undecidable and is
+# flagged in *every* arithmetic operation, in either order.  Detection is by
+# static type, so the variable case is caught too (not only inline calls).
+# A unit-tagged Quantity(v, "unit") and plain scalars are unaffected.
 # ---------------------------------------------------------------------------
 
 
-def test_sub_bare_quantity_rejected(mypy_fixture: Callable[[str], str]) -> None:
+def test_unknown_unit_sub_bare_quantity(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def shift(d: meter) -> meter:
             return d - Quantity(1.0)
     """)
-    has_mismatch(out)
-    assert "bare Quantity" in out, out
+    assert "Quantity[Any]" in out, out
 
 
-def test_bare_quantity_reverse_order_rejected(mypy_fixture: Callable[[str], str]) -> None:
+def test_unknown_unit_reverse_order(mypy_fixture: Callable[[str], str]) -> None:
     out = mypy_fixture("""
         def shift(d: meter) -> meter:
             return Quantity(1.0) - d
     """)
-    has_mismatch(out)
-    assert "bare Quantity" in out, out
+    assert "Quantity[Any]" in out, out
 
 
-def test_add_tagged_quantity_ok(mypy_fixture: Callable[[str], str]) -> None:
-    # A unit-tagged Quantity(value, "unit") is *not* bare — positional or keyword.
+def test_unknown_unit_multiplication(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def f(d: meter, x: Quantity) -> None:
+            y = d * x
+    """)
+    assert "Quantity[Any]" in out and "multiplication" in out, out
+
+
+def test_unknown_unit_division(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def f(d: meter, x: Quantity) -> None:
+            y = d / x
+    """)
+    assert "Quantity[Any]" in out and "division" in out, out
+
+
+def test_unknown_unit_power(mypy_fixture: Callable[[str], str]) -> None:
+    out = mypy_fixture("""
+        def f(x: Quantity) -> None:
+            y = x ** 2
+    """)
+    assert "Quantity[Any]" in out and "exponentiation" in out, out
+
+
+def test_unknown_unit_variable_case(mypy_fixture: Callable[[str], str]) -> None:
+    # Detection is by static type, so a bare Quantity bound to a variable is
+    # caught just like an inline call.
+    out = mypy_fixture("""
+        def f(d: meter) -> None:
+            x = Quantity(1.0)
+            y = d * x
+    """)
+    assert "Quantity[Any]" in out, out
+
+
+def test_tagged_quantity_ok(mypy_fixture: Callable[[str], str]) -> None:
+    # A unit-tagged Quantity(value, "unit") is tracked — positional or keyword.
     out = mypy_fixture("""
         def shift(d: meter) -> meter:
             return d + Quantity(1.0, "m")
         def shift_kw(d: meter) -> meter:
             return d + Quantity(1.0, unit="m")
+        def scale(d: meter) -> square_meter:
+            return d * Quantity(1.0, "m")
     """)
     no_error(out)
 
 
-def test_dimensionless_bare_quantity_ok(mypy_fixture: Callable[[str], str]) -> None:
+def test_plain_scalar_multiplication_ok(mypy_fixture: Callable[[str], str]) -> None:
+    # Plain scalars are not Quantity[Any]; multiplicative scaling stays valid.
     out = mypy_fixture("""
-        from mypy_units.units import dimensionless
-        def bump(r: dimensionless) -> dimensionless:
-            return r + Quantity(1.0)
+        def half(d: meter) -> meter:
+            return d * 0.5
     """)
     no_error(out)
 
